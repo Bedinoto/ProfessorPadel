@@ -28,13 +28,25 @@ import { format, addDays, startOfToday, isSameDay, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Slot, Booking, FinanceSummary, Location } from './types';
 
-// --- API HELPERS ---
-const API_URL = '';
+// --- LOCAL STORAGE HELPERS ---
+const getStorage = (key: string, defaultValue: any) => {
+  const stored = localStorage.getItem(key);
+  return stored ? JSON.parse(stored) : defaultValue;
+};
+
+const setStorage = (key: string, value: any) => {
+  localStorage.setItem(key, JSON.stringify(value));
+};
+
+// Initial Data
+const INITIAL_LOCATIONS: Location[] = [
+  { id: 1, name: 'Arena Padel' },
+  { id: 2, name: 'Clube de Campo' }
+];
 
 export default function App() {
   const [view, setView] = useState<'public' | 'login' | 'admin'>('public');
   const [token, setToken] = useState<string | null>(localStorage.getItem('padel_token'));
-  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (token) {
@@ -134,101 +146,67 @@ function PublicBooking() {
   ];
 
   useEffect(() => {
-    fetchLocations();
+    const locs = getStorage('padel_locations', INITIAL_LOCATIONS);
+    setLocations(locs);
   }, []);
 
   useEffect(() => {
     if (selectedLocation) {
-      fetchAvailableDays();
+      const allSlots: Slot[] = getStorage('padel_slots', []);
+      const days = [...new Set(allSlots
+        .filter(s => s.location_id === selectedLocation.id && s.is_available)
+        .map(s => s.date))].sort();
+      setAvailableDays(days);
+      
+      if (days.length > 0 && !days.includes(format(selectedDate, 'yyyy-MM-dd'))) {
+        setSelectedDate(parseISO(days[0]));
+      }
     }
   }, [selectedLocation]);
 
   useEffect(() => {
     if (selectedLocation && selectedDate) {
-      fetchSlots();
+      const allSlots: Slot[] = getStorage('padel_slots', []);
+      const dateStr = format(selectedDate, 'yyyy-MM-dd');
+      const filtered = allSlots.filter(s => s.location_id === selectedLocation.id && s.date === dateStr && s.is_available);
+      setSlots(filtered);
     }
   }, [selectedDate, selectedLocation]);
 
-  const fetchLocations = async () => {
-    try {
-      const res = await fetch(`${API_URL}/api/locations`);
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        setLocations(data);
-      } else {
-        console.error("Locations API did not return an array:", data);
-        setLocations([]);
-      }
-    } catch (err) {
-      console.error("Failed to fetch locations:", err);
-      setLocations([]);
-    }
-  };
-
-  const fetchAvailableDays = async () => {
-    if (!selectedLocation) return;
-    try {
-      const res = await fetch(`${API_URL}/api/available-days?location_id=${selectedLocation.id}`);
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        setAvailableDays(data);
-        if (data.length > 0 && !data.includes(format(selectedDate, 'yyyy-MM-dd'))) {
-          setSelectedDate(parseISO(data[0]));
-        }
-      } else {
-        setAvailableDays([]);
-      }
-    } catch (err) {
-      setAvailableDays([]);
-    }
-  };
-
-  const fetchSlots = async () => {
-    if (!selectedLocation) return;
-    try {
-      const res = await fetch(`${API_URL}/api/available-slots?date=${format(selectedDate, 'yyyy-MM-dd')}&location_id=${selectedLocation.id}`);
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        setSlots(data);
-      } else {
-        setSlots([]);
-      }
-    } catch (err) {
-      setSlots([]);
-    }
-  };
-
-  const handleBooking = async (e: React.FormEvent) => {
+  const handleBooking = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedSlot) return;
     
     setStatus('loading');
-    try {
+    setTimeout(() => {
+      const allSlots: Slot[] = getStorage('padel_slots', []);
+      const allBookings: Booking[] = getStorage('padel_bookings', []);
       const selectedType = bookingTypes.find(t => t.name === formData.type);
-      const res = await fetch(`${API_URL}/api/bookings`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          slot_id: selectedSlot.id,
-          student_name: formData.name,
-          student_phone: formData.phone,
-          booking_type: formData.type,
-          price: selectedType?.price || 0
-        })
-      });
-      
-      if (res.ok) {
-        setStatus('success');
-        fetchAvailableDays();
-        fetchSlots();
-        setSelectedSlot(null);
-        setFormData({ name: '', phone: '', type: 'Individual' });
-      } else {
-        setStatus('error');
-      }
-    } catch (err) {
-      setStatus('error');
-    }
+
+      // Update slot availability
+      const updatedSlots = allSlots.map(s => s.id === selectedSlot.id ? { ...s, is_available: 0 } : s);
+      setStorage('padel_slots', updatedSlots);
+
+      // Add booking
+      const newBooking: Booking = {
+        id: Date.now(),
+        slot_id: selectedSlot.id,
+        student_name: formData.name,
+        student_phone: formData.phone,
+        booking_type: formData.type,
+        price: selectedType?.price || 0,
+        paid: 0,
+        date: format(selectedDate, 'yyyy-MM-dd'),
+        time: selectedSlot.time,
+        location_name: selectedLocation?.name || ''
+      };
+      setStorage('padel_bookings', [...allBookings, newBooking]);
+
+      setStatus('success');
+      setSlots(updatedSlots.filter(s => s.location_id === selectedLocation?.id && s.date === format(selectedDate, 'yyyy-MM-dd') && s.is_available));
+      setSelectedSlot(null);
+      setFormData({ name: '', phone: '', type: 'Individual' });
+    }, 800);
   };
 
   return (
@@ -241,6 +219,7 @@ function PublicBooking() {
       <div className="text-center space-y-2">
         <h2 className="text-3xl font-bold tracking-tight">Reserve sua Aula</h2>
         <p className="text-gray-500">Escolha o local e horário para começar a treinar!</p>
+        <div className="inline-block bg-yellow-100 text-yellow-800 text-[10px] font-bold px-2 py-1 rounded uppercase">Modo de Teste Local</div>
       </div>
 
       {/* Location Selector */}
@@ -284,7 +263,7 @@ function PublicBooking() {
                 
                 {availableDays.length === 0 ? (
                   <div className="py-8 text-center text-gray-400 text-sm">
-                    Nenhum dia com horários disponíveis neste local.
+                    Nenhum dia com horários disponíveis neste local. Vá na área do professor para criar horários.
                   </div>
                 ) : (
                   <div className="grid grid-cols-4 gap-2">
@@ -468,30 +447,21 @@ function Login({ onLogin }: { onLogin: (token: string) => void }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
     
-    try {
-      const res = await fetch(`${API_URL}/api/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
-      });
-      const data = await res.json();
-      
-      if (res.ok) {
-        localStorage.setItem('padel_token', data.token);
-        onLogin(data.token);
+    setTimeout(() => {
+      if (username === 'admin' && password === 'padel2026') {
+        const token = 'mock_token_' + Date.now();
+        localStorage.setItem('padel_token', token);
+        onLogin(token);
       } else {
-        setError(data.error || 'Erro ao fazer login');
+        setError('Usuário ou senha incorretos');
       }
-    } catch (err) {
-      setError('Erro de conexão');
-    } finally {
       setLoading(false);
-    }
+    }, 500);
   };
 
   return (
@@ -506,6 +476,7 @@ function Login({ onLogin }: { onLogin: (token: string) => void }) {
         </div>
         <h2 className="text-2xl font-bold">Acesso do Professor</h2>
         <p className="text-gray-500">Entre com suas credenciais para gerenciar suas aulas.</p>
+        <div className="text-[10px] text-gray-400 uppercase font-bold">Dica: admin / padel2026</div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -553,29 +524,26 @@ function AdminDashboard({ token }: { token: string }) {
     fetchData();
   }, [tab]);
 
-  const fetchData = async () => {
+  const fetchData = () => {
     setLoading(true);
-    const headers = { 'Authorization': `Bearer ${token}` };
-    
-    try {
+    setTimeout(() => {
+      const allBookings: Booking[] = getStorage('padel_bookings', []);
+      
       if (tab === 'bookings') {
-        const res = await fetch(`${API_URL}/api/admin/bookings`, { headers });
-        const data = await res.json();
-        if (res.ok) {
-          setBookings(Array.isArray(data) ? data : []);
-        }
+        setBookings(allBookings.sort((a, b) => b.id - a.id));
       } else if (tab === 'finance') {
-        const res = await fetch(`${API_URL}/api/admin/finance`, { headers });
-        const data = await res.json();
-        if (res.ok) {
-          setFinance(data);
-        }
+        const total_revenue = allBookings.reduce((acc, b) => acc + b.price, 0);
+        const total_paid = allBookings.filter(b => b.paid).reduce((acc, b) => acc + b.price, 0);
+        const total_pending = total_revenue - total_paid;
+        setFinance({
+          total_revenue,
+          total_paid,
+          total_pending,
+          total_bookings: allBookings.length
+        });
       }
-    } catch (err) {
-      console.error(err);
-    } finally {
       setLoading(false);
-    }
+    }, 300);
   };
 
   return (
@@ -583,7 +551,7 @@ function AdminDashboard({ token }: { token: string }) {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Painel de Controle</h2>
-          <p className="text-gray-500">Gerencie seus horários, alunos e finanças.</p>
+          <p className="text-gray-500">Gerencie seus horários, alunos e finanças (Modo Local).</p>
         </div>
         
         <div className="flex flex-wrap bg-white p-1 rounded-xl border border-gray-200 shadow-sm">
@@ -673,15 +641,10 @@ function AdminDashboard({ token }: { token: string }) {
                       <td className="px-6 py-4">
                         <div className="flex gap-2">
                           <button 
-                            onClick={async () => {
-                              await fetch(`${API_URL}/api/admin/bookings/${booking.id}/pay`, {
-                                method: 'PATCH',
-                                headers: { 
-                                  'Authorization': `Bearer ${token}`,
-                                  'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify({ paid: !booking.paid, price: booking.price })
-                              });
+                            onClick={() => {
+                              const allBookings: Booking[] = getStorage('padel_bookings', []);
+                              const updated = allBookings.map(b => b.id === booking.id ? { ...b, paid: b.paid ? 0 : 1 } : b);
+                              setStorage('padel_bookings', updated);
                               fetchData();
                             }}
                             className="p-2 text-gray-400 hover:text-green-600 transition-colors"
@@ -690,12 +653,16 @@ function AdminDashboard({ token }: { token: string }) {
                             <DollarSign size={18} />
                           </button>
                           <button 
-                            onClick={async () => {
+                            onClick={() => {
                               if (confirm('Deseja realmente cancelar esta reserva?')) {
-                                await fetch(`${API_URL}/api/admin/bookings/${booking.id}`, {
-                                  method: 'DELETE',
-                                  headers: { 'Authorization': `Bearer ${token}` }
-                                });
+                                const allBookings: Booking[] = getStorage('padel_bookings', []);
+                                const allSlots: Slot[] = getStorage('padel_slots', []);
+                                
+                                const updatedBookings = allBookings.filter(b => b.id !== booking.id);
+                                const updatedSlots = allSlots.map(s => s.id === booking.slot_id ? { ...s, is_available: 1 } : s);
+                                
+                                setStorage('padel_bookings', updatedBookings);
+                                setStorage('padel_slots', updatedSlots);
                                 fetchData();
                               }
                             }}
@@ -745,7 +712,7 @@ function AdminDashboard({ token }: { token: string }) {
               <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden">
                 <div 
                   className="bg-blue-600 h-full" 
-                  style={{ width: `${(finance.total_paid / finance.total_revenue) * 100}%` }}
+                  style={{ width: finance.total_revenue > 0 ? `${(finance.total_paid / finance.total_revenue) * 100}%` : '0%' }}
                 />
               </div>
             </div>
@@ -785,7 +752,7 @@ function ScheduleManager({ token }: { token: string }) {
   ];
 
   useEffect(() => {
-    fetchLocations();
+    setLocations(getStorage('padel_locations', INITIAL_LOCATIONS));
   }, []);
 
   useEffect(() => {
@@ -798,242 +765,195 @@ function ScheduleManager({ token }: { token: string }) {
     if (selectedLocation && selectedDate) {
       fetchExistingSlots();
     }
-  }, [selectedLocation, selectedDate]);
+  }, [selectedDate, selectedLocation]);
 
-  const fetchExistingSlots = async () => {
-    if (!selectedLocation) return;
-    try {
-      const res = await fetch(`${API_URL}/api/admin/slots?location_id=${selectedLocation.id}&date=${format(selectedDate, 'yyyy-MM-dd')}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setExistingSlots(data);
-      }
-    } catch (err) {
-      console.error(err);
-    }
+  const fetchDatesWithSlots = () => {
+    const allSlots: Slot[] = getStorage('padel_slots', []);
+    const dates = [...new Set(allSlots.filter(s => s.location_id === selectedLocation?.id).map(s => s.date))];
+    setDatesWithSlots(dates);
   };
 
-  const fetchDatesWithSlots = async () => {
-    if (!selectedLocation) return;
-    try {
-      const res = await fetch(`${API_URL}/api/admin/all-slots-dates?location_id=${selectedLocation.id}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setDatesWithSlots(data);
-      }
-    } catch (err) {
-      console.error(err);
-    }
+  const fetchExistingSlots = () => {
+    const allSlots: Slot[] = getStorage('padel_slots', []);
+    const filtered = allSlots.filter(s => s.location_id === selectedLocation?.id && s.date === format(selectedDate, 'yyyy-MM-dd'));
+    setExistingSlots(filtered);
   };
 
-  const fetchLocations = async () => {
-    try {
-      const res = await fetch(`${API_URL}/api/admin/locations`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setLocations(Array.isArray(data) ? data : []);
-        if (Array.isArray(data) && data.length > 0) setSelectedLocation(data[0]);
-      } else {
-        console.error('Error fetching locations:', data.error);
-      }
-    } catch (err) {
-      console.error('Connection error:', err);
-    }
-  };
-
-  const toggleTime = (time: string) => {
-    if (availableTimes.includes(time)) {
-      setAvailableTimes(availableTimes.filter(t => t !== time));
-    } else {
-      setAvailableTimes([...availableTimes, time]);
-    }
-  };
-
-  const saveAvailability = async () => {
-    if (!selectedLocation) return;
+  const handleSaveSlots = () => {
+    if (!selectedLocation || availableTimes.length === 0) return;
+    
     setLoading(true);
-    setWarning(null);
-    try {
-      const res = await fetch(`${API_URL}/api/admin/slots`, {
-        method: 'POST',
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          date: format(selectedDate, 'yyyy-MM-dd'),
-          times: availableTimes,
-          location_id: selectedLocation.id
-        })
-      });
-      const data = await res.json();
+    setTimeout(() => {
+      const allSlots: Slot[] = getStorage('padel_slots', []);
+      const dateStr = format(selectedDate, 'yyyy-MM-dd');
       
-      if (data.warning) {
-        setWarning(data.warning);
-      } else {
-        setShowSuccess(true);
-        setTimeout(() => setShowSuccess(false), 3000);
-      }
+      const newSlots = availableTimes.map(time => ({
+        id: Date.now() + Math.random(),
+        location_id: selectedLocation.id,
+        date: dateStr,
+        time,
+        is_available: 1
+      }));
 
+      // Filter out existing
+      const filteredNew = newSlots.filter(ns => !allSlots.some(os => os.date === ns.date && os.time === ns.time && os.location_id === ns.location_id));
+      
+      setStorage('padel_slots', [...allSlots, ...filteredNew]);
+      setShowSuccess(true);
       setAvailableTimes([]);
-      fetchDatesWithSlots();
       fetchExistingSlots();
-    } catch (err) {
-      alert('Erro ao salvar horários');
-    } finally {
+      fetchDatesWithSlots();
       setLoading(false);
-    }
+      setTimeout(() => setShowSuccess(false), 3000);
+    }, 500);
+  };
+
+  const handleDeleteSlot = (id: number) => {
+    const allSlots: Slot[] = getStorage('padel_slots', []);
+    const updated = allSlots.filter(s => s.id !== id);
+    setStorage('padel_slots', updated);
+    fetchExistingSlots();
+    fetchDatesWithSlots();
   };
 
   return (
-    <div className="space-y-8 relative">
-      <AnimatePresence>
-        {showSuccess && (
-          <motion.div
-            initial={{ opacity: 0, y: -20, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -20, scale: 0.9 }}
-            className="fixed top-24 left-1/2 -translate-x-1/2 z-[100] bg-green-600 text-white px-8 py-4 rounded-2xl shadow-2xl flex items-center gap-3 border border-green-500"
-          >
-            <div className="bg-white/20 p-1 rounded-full">
-              <CheckCircle size={20} />
-            </div>
-            <span className="font-bold">Horários salvos com sucesso!</span>
-          </motion.div>
-        )}
-        {warning && (
-          <motion.div
-            initial={{ opacity: 0, y: -20, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -20, scale: 0.9 }}
-            className="fixed top-24 left-1/2 -translate-x-1/2 z-[100] bg-yellow-500 text-white px-8 py-4 rounded-2xl shadow-2xl flex flex-col gap-2 border border-yellow-400 max-w-md"
-          >
-            <div className="flex items-center gap-3">
-              <div className="bg-white/20 p-1 rounded-full">
-                <XCircle size={20} />
-              </div>
-              <span className="font-bold">Atenção!</span>
-              <button onClick={() => setWarning(null)} className="ml-auto hover:opacity-70">
-                <LogOut size={16} className="rotate-90" />
+    <div className="grid md:grid-cols-3 gap-8">
+      <div className="md:col-span-1 space-y-6">
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-4">
+          <h3 className="font-bold flex items-center gap-2">
+            <MapPin size={18} className="text-green-600" />
+            1. Escolha o Local
+          </h3>
+          <div className="space-y-2">
+            {locations.map(loc => (
+              <button
+                key={loc.id}
+                onClick={() => setSelectedLocation(loc)}
+                className={`w-full p-3 rounded-xl text-left font-medium transition-all ${selectedLocation?.id === loc.id ? 'bg-green-600 text-white shadow-md' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}
+              >
+                {loc.name}
               </button>
-            </div>
-            <p className="text-sm opacity-90">{warning}</p>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            ))}
+          </div>
+        </div>
 
-      {/* Location Selector */}
-      <div className="flex flex-wrap gap-3">
-        {locations.map(loc => (
-          <button
-            key={loc.id}
-            onClick={() => setSelectedLocation(loc)}
-            className={`px-6 py-3 rounded-2xl font-bold transition-all ${
-              selectedLocation?.id === loc.id
-                ? 'bg-green-600 text-white shadow-lg shadow-green-200'
-                : 'bg-white text-gray-600 border border-gray-100 hover:bg-gray-50'
-            }`}
-          >
-            {loc.name}
-          </button>
-        ))}
-        {locations.length === 0 && (
-          <p className="text-gray-400 text-sm py-2">Cadastre um local primeiro na aba "Locais".</p>
+        {selectedLocation && (
+          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-4">
+            <h3 className="font-bold flex items-center gap-2">
+              <CalendarIcon size={18} className="text-green-600" />
+              2. Escolha o Dia
+            </h3>
+            <div className="grid grid-cols-4 gap-2">
+              {[...Array(12)].map((_, i) => {
+                const date = addDays(startOfToday(), i);
+                const dateStr = format(date, 'yyyy-MM-dd');
+                const hasSlots = datesWithSlots.includes(dateStr);
+                const isSelected = isSameDay(date, selectedDate);
+                
+                return (
+                  <button
+                    key={i}
+                    onClick={() => setSelectedDate(date)}
+                    className={`p-2 rounded-xl flex flex-col items-center relative transition-all ${isSelected ? 'bg-green-600 text-white shadow-md' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}
+                  >
+                    <span className="text-[8px] uppercase font-bold opacity-70">{format(date, 'EEE', { locale: ptBR })}</span>
+                    <span className="text-sm font-bold">{format(date, 'dd')}</span>
+                    {hasSlots && !isSelected && <div className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full border-2 border-white" />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         )}
       </div>
 
-      <motion.div 
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="grid md:grid-cols-2 gap-8"
-      >
-        <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 space-y-6">
-          <h3 className="font-bold text-lg flex items-center gap-2">
-            <CalendarIcon size={20} className="text-green-600" />
-            1. Escolha o Dia
-          </h3>
-          <div className="grid grid-cols-4 gap-2">
-            {[...Array(12)].map((_, i) => {
-              const date = addDays(startOfToday(), i);
-              const isSelected = isSameDay(date, selectedDate);
-              const hasSlots = datesWithSlots.includes(format(date, 'yyyy-MM-dd'));
-              
-              return (
-                <button
-                  key={i}
-                  onClick={() => setSelectedDate(date)}
-                  className={`p-3 rounded-xl flex flex-col items-center transition-all relative ${
-                    isSelected 
-                      ? 'bg-green-600 text-white shadow-lg shadow-green-200' 
-                      : hasSlots
-                        ? 'bg-green-50 text-green-700 border border-green-200'
-                        : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  {hasSlots && !isSelected && (
-                    <div className="absolute top-1 right-1 w-1.5 h-1.5 bg-green-500 rounded-full" />
-                  )}
-                  <span className="text-[10px] uppercase font-bold opacity-70">
-                    {format(date, 'EEE', { locale: ptBR })}
-                  </span>
-                  <span className="text-lg font-bold">
-                    {format(date, 'dd')}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+      <div className="md:col-span-2 space-y-6">
+        {selectedLocation ? (
+          <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 space-y-8">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-xl">Gerenciar Horários: {selectedLocation.name}</h3>
+              <div className="text-sm text-gray-400 font-medium">{format(selectedDate, "dd 'de' MMMM", { locale: ptBR })}</div>
+            </div>
 
-        <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 space-y-6">
-          <h3 className="font-bold text-lg flex items-center gap-2">
-            <Clock size={20} className="text-green-600" />
-            2. Defina os Horários
-          </h3>
-          <div className="grid grid-cols-4 gap-2">
-            {timeSlots.map(time => {
-              const existing = existingSlots.find(s => s.time === time);
-              const isSelected = availableTimes.includes(time);
-              
-              return (
-                <button
-                  key={time}
-                  onClick={() => !existing && toggleTime(time)}
-                  className={`p-2 rounded-lg text-sm font-bold transition-all flex flex-col items-center ${
-                    existing
-                      ? existing.is_available 
-                        ? 'bg-green-100 text-green-700 border border-green-300 cursor-default'
-                        : 'bg-red-50 text-red-600 border border-red-100 cursor-default'
-                      : isSelected
-                        ? 'bg-green-600 text-white shadow-md'
-                        : 'bg-gray-50 text-gray-500 hover:bg-gray-100'
-                  }`}
-                >
-                  <span>{time}</span>
-                  {existing && (
-                    <span className="text-[8px] uppercase mt-0.5">
-                      {existing.is_available ? 'Liberado' : 'Ocupado'}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+            <div className="space-y-4">
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Selecione os horários para abrir</p>
+              <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                {timeSlots.map(time => {
+                  const isExisting = existingSlots.some(s => s.time === time);
+                  const isSelected = availableTimes.includes(time);
+                  
+                  return (
+                    <button
+                      key={time}
+                      disabled={isExisting}
+                      onClick={() => {
+                        if (isSelected) setAvailableTimes(availableTimes.filter(t => t !== time));
+                        else setAvailableTimes([...availableTimes, time]);
+                      }}
+                      className={`p-2 rounded-lg text-xs font-bold transition-all ${
+                        isExisting 
+                          ? 'bg-green-50 text-green-600 border border-green-100 cursor-default' 
+                          : isSelected
+                            ? 'bg-green-600 text-white shadow-md'
+                            : 'bg-gray-50 text-gray-400 hover:bg-gray-100'
+                      }`}
+                    >
+                      {time}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-gray-50 flex items-center justify-between">
+              <div className="text-sm text-gray-500">
+                {availableTimes.length} horários selecionados
+              </div>
+              <button
+                disabled={loading || availableTimes.length === 0}
+                onClick={handleSaveSlots}
+                className="bg-green-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-green-200 hover:bg-green-700 transition-all disabled:opacity-50 flex items-center gap-2"
+              >
+                {loading ? <Loader2 className="animate-spin" size={18} /> : <Plus size={18} />}
+                Salvar Horários
+              </button>
+            </div>
+
+            {showSuccess && (
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="bg-green-50 text-green-600 p-4 rounded-xl text-sm font-bold flex items-center gap-2">
+                <CheckCircle size={18} /> Horários salvos com sucesso!
+              </motion.div>
+            )}
+
+            <div className="space-y-4">
+              <h4 className="font-bold text-sm text-gray-400 uppercase tracking-widest">Horários Criados</h4>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {existingSlots.map(slot => (
+                  <div key={slot.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
+                    <span className="font-bold text-sm">{slot.time}</span>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[8px] font-bold uppercase px-1.5 py-0.5 rounded ${slot.is_available ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                        {slot.is_available ? 'Livre' : 'Ocupado'}
+                      </span>
+                      {slot.is_available && (
+                        <button onClick={() => handleDeleteSlot(slot.id)} className="text-gray-300 hover:text-red-500 transition-colors">
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {existingSlots.length === 0 && <div className="col-span-full py-8 text-center text-gray-400 text-sm italic">Nenhum horário criado para este dia.</div>}
+              </div>
+            </div>
           </div>
-          <button 
-            onClick={saveAvailability}
-            disabled={loading || availableTimes.length === 0 || !selectedLocation}
-            className="w-full bg-gray-900 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-black transition-all disabled:opacity-50"
-          >
-            {loading ? 'Salvando...' : 'Salvar Disponibilidade'}
-          </button>
-        </div>
-      </motion.div>
+        ) : (
+          <div className="h-full flex flex-col items-center justify-center py-20 bg-white rounded-3xl border-2 border-dashed border-gray-100 text-gray-400 space-y-4">
+            <MapPin size={48} />
+            <p className="font-medium">Selecione um local para gerenciar a agenda</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1044,114 +964,67 @@ function LocationManager({ token }: { token: string }) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetchLocations();
+    setLocations(getStorage('padel_locations', INITIAL_LOCATIONS));
   }, []);
 
-  const fetchLocations = async () => {
-    try {
-      const res = await fetch(`${API_URL}/api/admin/locations`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setLocations(Array.isArray(data) ? data : []);
-      } else {
-        console.error('Error fetching locations:', data.error);
-      }
-    } catch (err) {
-      console.error('Connection error:', err);
-    }
+  const handleAdd = () => {
+    if (!newName.trim()) return;
+    const newLoc = { id: Date.now(), name: newName };
+    const updated = [...locations, newLoc];
+    setLocations(updated);
+    setStorage('padel_locations', updated);
+    setNewName('');
   };
 
-  const handleAdd = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newName) return;
-    setLoading(true);
-    try {
-      const res = await fetch(`${API_URL}/api/admin/locations`, {
-        method: 'POST',
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ name: newName })
-      });
-      if (res.ok) {
-        setNewName('');
-        fetchLocations();
-      } else {
-        const data = await res.json();
-        alert(data.error);
-      }
-    } catch (err) {
-      alert('Erro ao adicionar local');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDelete = async (id: number) => {
-    if (!confirm('Deseja remover este local?')) return;
-    try {
-      const res = await fetch(`${API_URL}/api/admin/locations/${id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) {
-        fetchLocations();
-      } else {
-        const data = await res.json();
-        alert(data.error);
-      }
-    } catch (err) {
-      alert('Erro ao remover local');
+  const handleDelete = (id: number) => {
+    if (confirm('Deseja remover este local? Todos os horários vinculados serão perdidos.')) {
+      const updated = locations.filter(l => l.id !== id);
+      setLocations(updated);
+      setStorage('padel_locations', updated);
+      
+      // Also cleanup slots
+      const allSlots: Slot[] = getStorage('padel_slots', []);
+      setStorage('padel_slots', allSlots.filter(s => s.location_id !== id));
     }
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-8">
+    <div className="max-w-2xl mx-auto space-y-6">
       <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 space-y-6">
-        <h3 className="font-bold text-lg">Cadastrar Novo Local</h3>
-        <form onSubmit={handleAdd} className="flex gap-2">
+        <h3 className="font-bold text-xl">Gerenciar Locais de Aula</h3>
+        
+        <div className="flex gap-2">
           <input 
-            required
-            type="text"
-            placeholder="Ex: Arena Padel, Clube Social..."
+            type="text" 
+            placeholder="Nome do Local (Ex: Arena Padel)"
             className="flex-1 px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none"
             value={newName}
             onChange={e => setNewName(e.target.value)}
           />
           <button 
-            disabled={loading}
-            className="bg-green-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-green-200 hover:bg-green-700 transition-all disabled:opacity-50"
+            onClick={handleAdd}
+            className="bg-green-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-green-200 hover:bg-green-700 transition-all"
           >
             Adicionar
           </button>
-        </form>
-      </div>
-
-      <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="p-6 border-b border-gray-50">
-          <h3 className="font-bold text-lg">Locais Cadastrados</h3>
         </div>
-        <div className="divide-y divide-gray-50">
+
+        <div className="space-y-2">
           {locations.map(loc => (
-            <div key={loc.id} className="p-6 flex justify-between items-center hover:bg-gray-50 transition-colors">
-              <span className="font-medium">{loc.name}</span>
-              <button 
-                onClick={() => handleDelete(loc.id)}
-                className="p-2 text-gray-400 hover:text-red-600 transition-colors"
-              >
-                <Trash2 size={18} />
+            <div key={loc.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-green-600 shadow-sm">
+                  <MapPin size={20} />
+                </div>
+                <span className="font-bold">{loc.name}</span>
+              </div>
+              <button onClick={() => handleDelete(loc.id)} className="p-2 text-gray-300 hover:text-red-500 transition-colors">
+                <Trash2 size={20} />
               </button>
             </div>
           ))}
-          {locations.length === 0 && (
-            <div className="p-12 text-center text-gray-400">Nenhum local cadastrado.</div>
-          )}
         </div>
       </div>
     </div>
   );
 }
-
