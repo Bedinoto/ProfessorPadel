@@ -10,12 +10,30 @@ import { format } from "date-fns";
 
 dotenv.config();
 
+// Validate environment variables
+const requiredEnv = ['MYSQL_HOST', 'MYSQL_USER', 'MYSQL_PASSWORD', 'MYSQL_DATABASE'];
+const missingEnv = requiredEnv.filter(key => !process.env[key]);
+if (missingEnv.length > 0) {
+  console.error(`CRITICAL ERROR: Missing environment variables: ${missingEnv.join(', ')}`);
+  console.error('Please set these variables in your Hostinger panel or .env file.');
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "padel_secret_key";
 
 app.use(cors());
 app.use(express.json());
+
+// Health check endpoint
+app.get("/api/health", async (req, res) => {
+  try {
+    const [rows] = await pool.query("SELECT 1");
+    res.json({ status: "ok", database: "connected", timestamp: new Date() });
+  } catch (error) {
+    res.status(500).json({ status: "error", database: "disconnected", message: error instanceof Error ? error.message : String(error) });
+  }
+});
 
 // Middleware to verify JWT
 const authenticateToken = (req: any, res: any, next: any) => {
@@ -289,7 +307,13 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
+    const __dirname = path.dirname(new URL(import.meta.url).pathname);
+    // On Windows, pathname might start with /C:/, so we handle that
+    const normalizedDirname = process.platform === 'win32' ? __dirname.substring(1) : __dirname;
     const distPath = path.join(process.cwd(), "dist");
+    
+    console.log(`Production mode: serving static files from ${distPath}`);
+    
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
