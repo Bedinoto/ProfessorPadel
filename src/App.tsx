@@ -59,7 +59,7 @@ export default function App() {
             <div className="bg-green-600 p-2 rounded-lg">
               <TrendingUp className="text-white w-5 h-5" />
             </div>
-            <h1 className="font-bold text-xl tracking-tight">Instrutor <span className="text-green-600">Rafael Vielmo</span></h1>
+            <h1 className="font-bold text-xl tracking-tight">🎾 Instrutor <span className="text-green-600">Rafael Vielmo</span></h1>
           </div>
           
           <div className="flex gap-4 items-center">
