@@ -1,5 +1,4 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import path from "path";
 import cors from "cors";
 import jwt from "jsonwebtoken";
@@ -319,8 +318,8 @@ async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     try {
       // @ts-ignore - Dynamic import for dev only
-      const { createServer: createViteServer } = await import("vite");
-      const vite = await createViteServer({
+      const viteModule = await import("vite");
+      const vite = await viteModule.createServer({
         server: { middlewareMode: true },
         appType: "spa",
       });
