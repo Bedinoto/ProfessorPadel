@@ -150,27 +150,52 @@ function PublicBooking() {
   }, [selectedDate, selectedLocation]);
 
   const fetchLocations = async () => {
-    const res = await fetch(`${API_URL}/api/locations`);
-    const data = await res.json();
-    setLocations(data);
+    try {
+      const res = await fetch(`${API_URL}/api/locations`);
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setLocations(data);
+      } else {
+        console.error("Locations API did not return an array:", data);
+        setLocations([]);
+      }
+    } catch (err) {
+      console.error("Failed to fetch locations:", err);
+      setLocations([]);
+    }
   };
 
   const fetchAvailableDays = async () => {
     if (!selectedLocation) return;
-    const res = await fetch(`${API_URL}/api/available-days?location_id=${selectedLocation.id}`);
-    const data = await res.json();
-    setAvailableDays(data);
-    
-    if (data.length > 0 && !data.includes(format(selectedDate, 'yyyy-MM-dd'))) {
-      setSelectedDate(parseISO(data[0]));
+    try {
+      const res = await fetch(`${API_URL}/api/available-days?location_id=${selectedLocation.id}`);
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setAvailableDays(data);
+        if (data.length > 0 && !data.includes(format(selectedDate, 'yyyy-MM-dd'))) {
+          setSelectedDate(parseISO(data[0]));
+        }
+      } else {
+        setAvailableDays([]);
+      }
+    } catch (err) {
+      setAvailableDays([]);
     }
   };
 
   const fetchSlots = async () => {
     if (!selectedLocation) return;
-    const res = await fetch(`${API_URL}/api/available-slots?date=${format(selectedDate, 'yyyy-MM-dd')}&location_id=${selectedLocation.id}`);
-    const data = await res.json();
-    setSlots(data);
+    try {
+      const res = await fetch(`${API_URL}/api/available-slots?date=${format(selectedDate, 'yyyy-MM-dd')}&location_id=${selectedLocation.id}`);
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setSlots(data);
+      } else {
+        setSlots([]);
+      }
+    } catch (err) {
+      setSlots([]);
+    }
   };
 
   const handleBooking = async (e: React.FormEvent) => {
