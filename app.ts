@@ -10,13 +10,29 @@ import { format } from "date-fns";
 
 dotenv.config();
 
+// --- GLOBAL ERROR HANDLING ---
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT EXCEPTION! Shutting down...');
+  console.error(err.name, err.message, err.stack);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('UNHANDLED REJECTION! Shutting down...');
+  console.error(reason);
+});
+
 // Validate environment variables
 const requiredEnv = ['MYSQL_HOST', 'MYSQL_USER', 'MYSQL_PASSWORD', 'MYSQL_DATABASE'];
 const missingEnv = requiredEnv.filter(key => !process.env[key]);
-if (missingEnv.length > 0) {
-  console.error(`CRITICAL ERROR: Missing environment variables: ${missingEnv.join(', ')}`);
-  console.error('Please set these variables in your Hostinger panel or .env file.');
-}
+
+console.log("--- Environment Check ---");
+console.log(`NODE_ENV: ${process.env.NODE_ENV}`);
+console.log(`PORT: ${process.env.PORT}`);
+console.log(`JWT_SECRET: ${process.env.JWT_SECRET ? 'Configured' : 'Using Default'}`);
+requiredEnv.forEach(key => {
+  console.log(`${key}: ${process.env[key] ? 'Present' : 'MISSING'}`);
+});
+console.log("-------------------------");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -323,10 +339,10 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`>>> SERVER STARTED SUCCESSFULY <<<`);
-    console.log(`Listening on port: ${PORT}`);
-    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  app.listen(PORT, () => {
+    console.log(`>>> SERVER IS ALIVE <<<`);
+    console.log(`Port: ${PORT}`);
+    console.log(`Mode: ${process.env.NODE_ENV || 'development'}`);
   });
 }
 
