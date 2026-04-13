@@ -3,29 +3,38 @@ import path from "path";
 import cors from "cors";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
-import pool from "./db.ts";
 import dotenv from "dotenv";
 import { format } from "date-fns";
 
 dotenv.config();
 
-console.log("SERVER INITIALIZING...");
-
 const app = express();
-// Hostinger can pass a port or a socket path
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "padel_secret_key";
 
-// Immediate response for health checks to prevent 503
-app.get("/ping", (req, res) => res.send("pong"));
+// --- IMMEDIATE HEALTH CHECK ---
+app.get("/ping", (req, res) => {
+  res.status(200).send("pong");
+});
 
 app.use(cors());
 app.use(express.json());
 
+// Lazy load database to prevent crash on boot
+let pool: any;
+const getPool = async () => {
+  if (!pool) {
+    const { default: dbPool } = await import("./db.ts");
+    pool = dbPool;
+  }
+  return pool;
+};
+
 // Health check endpoint
 app.get("/api/health", async (req, res) => {
   try {
-    const [rows] = await pool.query("SELECT 1");
+    const db = await getPool();
+    await db.query("SELECT 1");
     res.json({ status: "ok", database: "connected", timestamp: new Date() });
   } catch (error) {
     res.status(500).json({ status: "error", database: "disconnected", message: error instanceof Error ? error.message : String(error) });
@@ -54,7 +63,8 @@ app.post("/api/login", async (req, res) => {
   const cleanPassword = password?.trim();
 
   try {
-    const [rows]: any = await pool.query("SELECT * FROM users WHERE LOWER(username) = ?", [cleanUsername]);
+    const db = await getPool();
+    const [rows]: any = await db.query("SELECT * FROM users WHERE LOWER(username) = ?", [cleanUsername]);
     const user = rows[0];
 
     if (!user) {
@@ -87,7 +97,8 @@ app.get("/api/locations", async (req, res) => {
 app.get("/api/available-slots", async (req, res) => {
   const { date, location_id } = req.query;
   try {
-    const [rows] = await pool.query("SELECT * FROM slots WHERE date = ? AND location_id = ? AND is_available = 1", [date, location_id]);
+    const db = await getPool();
+    const [rows] = await db.query("SELECT * FROM slots WHERE date = ? AND location_id = ? AND is_available = 1", [date, location_id]);
     res.json(rows);
   } catch (error) {
     res.status(500).json({ error: "Erro ao buscar horários" });
@@ -97,7 +108,8 @@ app.get("/api/available-slots", async (req, res) => {
 app.get("/api/available-days", async (req, res) => {
   const { location_id } = req.query;
   try {
-    const [rows]: any = await pool.query(`
+    const db = await getPool();
+    const [rows]: any = await db.query(`
       SELECT DISTINCT date 
       FROM slots 
       WHERE is_available = 1 AND location_id = ? AND date >= ?
@@ -112,28 +124,33 @@ app.get("/api/available-days", async (req, res) => {
 app.post("/api/bookings", async (req, res) => {
   const { slot_id, student_name, student_phone, booking_type, price } = req.body;
   
-  const connection = await pool.getConnection();
   try {
-    await connection.beginTransaction();
+    const db = await getPool();
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
 
-    const [slots]: any = await connection.query("SELECT * FROM slots WHERE id = ? AND is_available = 1 FOR UPDATE", [slot_id]);
-    const slot = slots[0];
+      const [slots]: any = await connection.query("SELECT * FROM slots WHERE id = ? AND is_available = 1 FOR UPDATE", [slot_id]);
+      const slot = slots[0];
 
-    if (!slot) {
+      if (!slot) {
+        await connection.rollback();
+        return res.status(400).json({ error: "Horário não disponível" });
+      }
+
+      await connection.query("INSERT INTO bookings (slot_id, student_name, student_phone, booking_type, price) VALUES (?, ?, ?, ?, ?)", [slot_id, student_name, student_phone, booking_type, price]);
+      await connection.query("UPDATE slots SET is_available = 0 WHERE id = ?", [slot_id]);
+
+      await connection.commit();
+      res.json({ success: true });
+    } catch (error) {
       await connection.rollback();
-      return res.status(400).json({ error: "Horário não disponível" });
+      res.status(500).json({ error: "Erro ao realizar reserva" });
+    } finally {
+      connection.release();
     }
-
-    await connection.query("INSERT INTO bookings (slot_id, student_name, student_phone, booking_type, price) VALUES (?, ?, ?, ?, ?)", [slot_id, student_name, student_phone, booking_type, price]);
-    await connection.query("UPDATE slots SET is_available = 0 WHERE id = ?", [slot_id]);
-
-    await connection.commit();
-    res.json({ success: true });
   } catch (error) {
-    await connection.rollback();
-    res.status(500).json({ error: "Erro ao realizar reserva" });
-  } finally {
-    connection.release();
+    res.status(500).json({ error: "Erro de conexão com o banco" });
   }
 });
 
@@ -141,7 +158,8 @@ app.post("/api/bookings", async (req, res) => {
 
 app.get("/api/admin/locations", authenticateToken, async (req, res) => {
   try {
-    const [rows] = await pool.query("SELECT * FROM locations");
+    const db = await getPool();
+    const [rows] = await db.query("SELECT * FROM locations");
     res.json(rows);
   } catch (error) {
     res.status(500).json({ error: "Erro ao buscar locais" });
@@ -151,7 +169,8 @@ app.get("/api/admin/locations", authenticateToken, async (req, res) => {
 app.post("/api/admin/locations", authenticateToken, async (req, res) => {
   const { name } = req.body;
   try {
-    await pool.query("INSERT INTO locations (name) VALUES (?)", [name]);
+    const db = await getPool();
+    await db.query("INSERT INTO locations (name) VALUES (?)", [name]);
     res.json({ success: true });
   } catch (error) {
     res.status(400).json({ error: "Local já existe ou nome inválido" });
@@ -161,7 +180,8 @@ app.post("/api/admin/locations", authenticateToken, async (req, res) => {
 app.delete("/api/admin/locations/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
   try {
-    await pool.query("DELETE FROM locations WHERE id = ?", [id]);
+    const db = await getPool();
+    await db.query("DELETE FROM locations WHERE id = ?", [id]);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: "Erro ao remover local" });
@@ -171,7 +191,8 @@ app.delete("/api/admin/locations/:id", authenticateToken, async (req, res) => {
 app.get("/api/admin/all-slots-dates", authenticateToken, async (req, res) => {
   const { location_id } = req.query;
   try {
-    const [rows]: any = await pool.query(`
+    const db = await getPool();
+    const [rows]: any = await db.query(`
       SELECT DISTINCT date 
       FROM slots 
       WHERE location_id = ?
@@ -186,16 +207,17 @@ app.post("/api/admin/slots", authenticateToken, async (req, res) => {
   const { date, times, location_id } = req.body;
   
   try {
+    const db = await getPool();
     const duplicates = [];
     for (const time of times) {
-      const [existing]: any = await pool.query("SELECT location_id FROM slots WHERE date = ? AND time = ?", [date, time]);
+      const [existing]: any = await db.query("SELECT location_id FROM slots WHERE date = ? AND time = ?", [date, time]);
       if (existing[0]) {
         if (existing[0].location_id !== parseInt(location_id)) {
           duplicates.push(time);
         }
         continue;
       }
-      await pool.query("INSERT INTO slots (location_id, date, time, is_available) VALUES (?, ?, ?, 1)", [location_id, date, time]);
+      await db.query("INSERT INTO slots (location_id, date, time, is_available) VALUES (?, ?, ?, 1)", [location_id, date, time]);
     }
     
     if (duplicates.length > 0) {
@@ -214,7 +236,8 @@ app.post("/api/admin/slots", authenticateToken, async (req, res) => {
 app.get("/api/admin/slots", authenticateToken, async (req, res) => {
   const { date, location_id } = req.query;
   try {
-    const [rows] = await pool.query("SELECT * FROM slots WHERE date = ? AND location_id = ?", [date, location_id]);
+    const db = await getPool();
+    const [rows] = await db.query("SELECT * FROM slots WHERE date = ? AND location_id = ?", [date, location_id]);
     res.json(rows);
   } catch (error) {
     res.status(500).json({ error: "Erro ao buscar horários" });
@@ -224,7 +247,8 @@ app.get("/api/admin/slots", authenticateToken, async (req, res) => {
 app.delete("/api/admin/slots/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
   try {
-    await pool.query("DELETE FROM slots WHERE id = ? AND is_available = 1", [id]);
+    const db = await getPool();
+    await db.query("DELETE FROM slots WHERE id = ? AND is_available = 1", [id]);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: "Erro ao remover horário" });
@@ -233,7 +257,8 @@ app.delete("/api/admin/slots/:id", authenticateToken, async (req, res) => {
 
 app.get("/api/admin/bookings", authenticateToken, async (req, res) => {
   try {
-    const [rows] = await pool.query(`
+    const db = await getPool();
+    const [rows] = await db.query(`
       SELECT b.*, s.date, s.time, l.name as location_name
       FROM bookings b 
       JOIN slots s ON b.slot_id = s.id 
@@ -250,7 +275,8 @@ app.patch("/api/admin/bookings/:id/pay", authenticateToken, async (req, res) => 
   const { id } = req.params;
   const { paid, price } = req.body;
   try {
-    await pool.query("UPDATE bookings SET paid = ?, price = ? WHERE id = ?", [paid ? 1 : 0, price, id]);
+    const db = await getPool();
+    await db.query("UPDATE bookings SET paid = ?, price = ? WHERE id = ?", [paid ? 1 : 0, price, id]);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: "Erro ao atualizar pagamento" });
@@ -259,28 +285,34 @@ app.patch("/api/admin/bookings/:id/pay", authenticateToken, async (req, res) => 
 
 app.delete("/api/admin/bookings/:id", authenticateToken, async (req, res) => {
   const { id } = req.params;
-  const connection = await pool.getConnection();
   try {
-    await connection.beginTransaction();
-    const [rows]: any = await connection.query("SELECT slot_id FROM bookings WHERE id = ?", [id]);
-    const booking = rows[0];
-    if (booking) {
-      await connection.query("UPDATE slots SET is_available = 1 WHERE id = ?", [booking.slot_id]);
-      await connection.query("DELETE FROM bookings WHERE id = ?", [id]);
+    const db = await getPool();
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      const [rows]: any = await connection.query("SELECT slot_id FROM bookings WHERE id = ?", [id]);
+      const booking = rows[0];
+      if (booking) {
+        await connection.query("UPDATE slots SET is_available = 1 WHERE id = ?", [booking.slot_id]);
+        await connection.query("DELETE FROM bookings WHERE id = ?", [id]);
+      }
+      await connection.commit();
+      res.json({ success: true });
+    } catch (error) {
+      await connection.rollback();
+      res.status(500).json({ error: "Erro ao cancelar reserva" });
+    } finally {
+      connection.release();
     }
-    await connection.commit();
-    res.json({ success: true });
   } catch (error) {
-    await connection.rollback();
-    res.status(500).json({ error: "Erro ao cancelar reserva" });
-  } finally {
-    connection.release();
+    res.status(500).json({ error: "Erro de conexão com o banco" });
   }
 });
 
 app.get("/api/admin/finance", authenticateToken, async (req, res) => {
   try {
-    const [rows]: any = await pool.query(`
+    const db = await getPool();
+    const [rows]: any = await db.query(`
       SELECT 
         SUM(price) as total_revenue,
         SUM(CASE WHEN paid = 1 THEN price ELSE 0 END) as total_paid,
