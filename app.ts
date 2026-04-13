@@ -1,36 +1,44 @@
 import express from "express";
 import path from "path";
 import cors from "cors";
-import dotenv from "dotenv";
-
-dotenv.config();
+import fs from "fs";
 
 const app = express();
+// Hostinger requires process.env.PORT
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
 
-// --- MINIMAL ROUTES ---
-app.get("/ping", (req, res) => res.send("pong"));
-
-// Mock API for health check
-app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", mode: "client-side-only" });
+// --- PING FOR 503 TEST ---
+app.get("/ping", (req, res) => {
+  res.status(200).send("pong");
 });
 
 // --- SERVING FRONTEND ---
-const distPath = path.join(process.cwd(), "dist");
+// Using a more robust path resolution for Hostinger
+const distPath = path.resolve(process.cwd(), "dist");
+
 app.use(express.static(distPath));
 
 app.get("*", (req, res) => {
-  res.sendFile(path.join(distPath, "index.html"), (err) => {
-    if (err) {
-      res.status(200).send("Servidor Ativo (Modo Estático). Aguardando build do frontend...");
-    }
-  });
+  const indexPath = path.join(distPath, "index.html");
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.status(200).send(`
+      <h1>Servidor Node.js Ativo</h1>
+      <p>Pasta 'dist' não encontrada em: ${distPath}</p>
+      <p>Certifique-se de que o comando 'npm run build' foi executado com sucesso.</p>
+    `);
+  }
+});
+
+// Global error logger for Hostinger
+process.on('uncaughtException', (err) => {
+  fs.writeFileSync('erro_fatal.txt', `${new Date().toISOString()}: ${err.message}\n${err.stack}`);
 });
 
 app.listen(PORT, () => {
-  console.log(`STATIC SERVER RUNNING ON PORT ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
