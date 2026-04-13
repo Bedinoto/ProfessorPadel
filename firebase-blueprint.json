@@ -1,0 +1,56 @@
+{
+  "entities": {
+    "Location": {
+      "title": "Location",
+      "description": "A place where padel classes are held",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Name of the location" }
+      },
+      "required": ["name"]
+    },
+    "Slot": {
+      "title": "Slot",
+      "description": "An available time slot for a class",
+      "type": "object",
+      "properties": {
+        "location_id": { "type": "string", "description": "ID of the location" },
+        "date": { "type": "string", "format": "date", "description": "Date of the slot (YYYY-MM-DD)" },
+        "time": { "type": "string", "description": "Time of the slot (HH:MM)" },
+        "is_available": { "type": "boolean", "description": "Whether the slot is available for booking" }
+      },
+      "required": ["location_id", "date", "time", "is_available"]
+    },
+    "Booking": {
+      "title": "Booking",
+      "description": "A student's reservation for a slot",
+      "type": "object",
+      "properties": {
+        "slot_id": { "type": "string", "description": "ID of the booked slot" },
+        "student_name": { "type": "string", "description": "Name of the student" },
+        "student_phone": { "type": "string", "description": "Phone number of the student" },
+        "booking_type": { "type": "string", "description": "Type of class (Individual, Dupla, etc.)" },
+        "price": { "type": "number", "description": "Price of the booking" },
+        "paid": { "type": "boolean", "description": "Whether the booking has been paid" },
+        "date": { "type": "string", "format": "date", "description": "Date of the class" },
+        "time": { "type": "string", "description": "Time of the class" },
+        "location_name": { "type": "string", "description": "Name of the location at the time of booking" }
+      },
+      "required": ["slot_id", "student_name", "student_phone", "booking_type", "price", "paid", "date", "time", "location_name"]
+    }
+  },
+  "firestore": {
+    "/locations/{locationId}": {
+      "schema": "Location",
+      "description": "Collection of locations"
+    },
+    "/slots/{slotId}": {
+      "schema": "Slot",
+      "description": "Collection of all time slots"
+    },
+    "/bookings/{bookingId}": {
+      "schema": "Booking",
+      "description": "Collection of all bookings"
+    }
+  }
+}

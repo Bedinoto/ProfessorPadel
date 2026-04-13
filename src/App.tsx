@@ -27,38 +27,85 @@ import {
 import { format, addDays, startOfToday, isSameDay, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Slot, Booking, FinanceSummary, Location } from './types';
+import { 
+  auth, 
+  db, 
+  googleProvider, 
+  signInWithPopup, 
+  signOut, 
+  onAuthStateChanged, 
+  collection, 
+  doc, 
+  setDoc, 
+  getDoc, 
+  getDocs, 
+  updateDoc, 
+  deleteDoc, 
+  query, 
+  where, 
+  orderBy, 
+  onSnapshot 
+} from './firebase';
 
-// --- LOCAL STORAGE HELPERS ---
-const getStorage = (key: string, defaultValue: any) => {
-  const stored = localStorage.getItem(key);
-  return stored ? JSON.parse(stored) : defaultValue;
-};
+// --- ERROR HANDLING ---
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
 
-const setStorage = (key: string, value: any) => {
-  localStorage.setItem(key, JSON.stringify(value));
-};
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: any;
+}
 
-// Initial Data
-const INITIAL_LOCATIONS: Location[] = [
-  { id: 1, name: 'Arena Padel' },
-  { id: 2, name: 'Clube de Campo' }
-];
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
 
 export default function App() {
   const [view, setView] = useState<'public' | 'login' | 'admin'>('public');
-  const [token, setToken] = useState<string | null>(localStorage.getItem('padel_token'));
+  const [user, setUser] = useState<any>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
 
   useEffect(() => {
-    if (token) {
-      setView('admin');
-    }
-  }, [token]);
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setIsAuthReady(true);
+      if (currentUser) {
+        setView('admin');
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
-  const handleLogout = () => {
-    localStorage.removeItem('padel_token');
-    setToken(null);
+  const handleLogout = async () => {
+    await signOut(auth);
     setView('public');
   };
+
+  if (!isAuthReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <Loader2 className="animate-spin text-green-600 w-10 h-10" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 font-sans">
@@ -83,7 +130,7 @@ export default function App() {
                 Área do Professor
               </button>
             )}
-            {token && (
+            {user && (
               <div className="flex items-center gap-4">
                 <button 
                   onClick={() => setView('admin')}
@@ -112,12 +159,12 @@ export default function App() {
           )}
           {view === 'login' && (
             <motion.div key="login" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <Login onLogin={(t) => { setToken(t); setView('admin'); }} />
+              <Login onLogin={() => setView('admin')} />
             </motion.div>
           )}
-          {view === 'admin' && (
+          {view === 'admin' && user && (
             <motion.div key="admin" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <AdminDashboard token={token!} />
+              <AdminDashboard user={user} />
             </motion.div>
           )}
         </AnimatePresence>
@@ -146,67 +193,84 @@ function PublicBooking() {
   ];
 
   useEffect(() => {
-    const locs = getStorage('padel_locations', INITIAL_LOCATIONS);
-    setLocations(locs);
+    const unsubscribe = onSnapshot(collection(db, 'locations'), (snapshot) => {
+      const locs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Location));
+      setLocations(locs);
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'locations'));
+    return () => unsubscribe();
   }, []);
 
   useEffect(() => {
     if (selectedLocation) {
-      const allSlots: Slot[] = getStorage('padel_slots', []);
-      const days = [...new Set(allSlots
-        .filter(s => s.location_id === selectedLocation.id && s.is_available)
-        .map(s => s.date))].sort();
-      setAvailableDays(days);
-      
-      if (days.length > 0 && !days.includes(format(selectedDate, 'yyyy-MM-dd'))) {
-        setSelectedDate(parseISO(days[0]));
-      }
+      const q = query(
+        collection(db, 'slots'), 
+        where('location_id', '==', selectedLocation.id),
+        where('is_available', '==', true)
+      );
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const allSlots = snapshot.docs.map(doc => doc.data() as Slot);
+        const days = [...new Set(allSlots.map(s => s.date))].sort();
+        setAvailableDays(days);
+        
+        if (days.length > 0 && !days.includes(format(selectedDate, 'yyyy-MM-dd'))) {
+          setSelectedDate(parseISO(days[0]));
+        }
+      }, (error) => handleFirestoreError(error, OperationType.LIST, 'slots'));
+      return () => unsubscribe();
     }
   }, [selectedLocation]);
 
   useEffect(() => {
     if (selectedLocation && selectedDate) {
-      const allSlots: Slot[] = getStorage('padel_slots', []);
       const dateStr = format(selectedDate, 'yyyy-MM-dd');
-      const filtered = allSlots.filter(s => s.location_id === selectedLocation.id && s.date === dateStr && s.is_available);
-      setSlots(filtered);
+      const q = query(
+        collection(db, 'slots'),
+        where('location_id', '==', selectedLocation.id),
+        where('date', '==', dateStr),
+        where('is_available', '==', true)
+      );
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const filtered = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Slot));
+        setSlots(filtered.sort((a, b) => a.time.localeCompare(b.time)));
+      }, (error) => handleFirestoreError(error, OperationType.LIST, 'slots'));
+      return () => unsubscribe();
     }
   }, [selectedDate, selectedLocation]);
 
-  const handleBooking = (e: React.FormEvent) => {
+  const handleBooking = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedSlot) return;
     
     setStatus('loading');
-    setTimeout(() => {
-      const allSlots: Slot[] = getStorage('padel_slots', []);
-      const allBookings: Booking[] = getStorage('padel_bookings', []);
+    try {
       const selectedType = bookingTypes.find(t => t.name === formData.type);
 
       // Update slot availability
-      const updatedSlots = allSlots.map(s => s.id === selectedSlot.id ? { ...s, is_available: 0 } : s);
-      setStorage('padel_slots', updatedSlots);
+      await updateDoc(doc(db, 'slots', selectedSlot.id), {
+        is_available: false
+      });
 
       // Add booking
-      const newBooking: Booking = {
-        id: Date.now(),
+      const bookingId = Date.now().toString();
+      await setDoc(doc(db, 'bookings', bookingId), {
         slot_id: selectedSlot.id,
         student_name: formData.name,
         student_phone: formData.phone,
         booking_type: formData.type,
         price: selectedType?.price || 0,
-        paid: 0,
+        paid: false,
         date: format(selectedDate, 'yyyy-MM-dd'),
         time: selectedSlot.time,
         location_name: selectedLocation?.name || ''
-      };
-      setStorage('padel_bookings', [...allBookings, newBooking]);
+      });
 
       setStatus('success');
-      setSlots(updatedSlots.filter(s => s.location_id === selectedLocation?.id && s.date === format(selectedDate, 'yyyy-MM-dd') && s.is_available));
       setSelectedSlot(null);
       setFormData({ name: '', phone: '', type: 'Individual' });
-    }, 800);
+    } catch (err) {
+      console.error(err);
+      setStatus('error');
+    }
   };
 
   return (
@@ -219,7 +283,6 @@ function PublicBooking() {
       <div className="text-center space-y-2">
         <h2 className="text-3xl font-bold tracking-tight">Reserve sua Aula</h2>
         <p className="text-gray-500">Escolha o local e horário para começar a treinar!</p>
-        <div className="inline-block bg-yellow-100 text-yellow-800 text-[10px] font-bold px-2 py-1 rounded uppercase">Modo de Teste Local</div>
       </div>
 
       {/* Location Selector */}
@@ -263,7 +326,7 @@ function PublicBooking() {
                 
                 {availableDays.length === 0 ? (
                   <div className="py-8 text-center text-gray-400 text-sm">
-                    Nenhum dia com horários disponíveis neste local. Vá na área do professor para criar horários.
+                    Nenhum dia com horários disponíveis neste local.
                   </div>
                 ) : (
                   <div className="grid grid-cols-4 gap-2">
@@ -441,27 +504,21 @@ function PublicBooking() {
   );
 }
 
-function Login({ onLogin }: { onLogin: (token: string) => void }) {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+function Login({ onLogin }: { onLogin: () => void }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleGoogleLogin = async () => {
     setLoading(true);
     setError('');
-    
-    setTimeout(() => {
-      if (username === 'admin' && password === 'padel2026') {
-        const token = 'mock_token_' + Date.now();
-        localStorage.setItem('padel_token', token);
-        onLogin(token);
-      } else {
-        setError('Usuário ou senha incorretos');
-      }
+    try {
+      await signInWithPopup(auth, googleProvider);
+      onLogin();
+    } catch (err: any) {
+      setError('Erro ao fazer login com Google: ' + err.message);
+    } finally {
       setLoading(false);
-    }, 500);
+    }
   };
 
   return (
@@ -475,63 +532,44 @@ function Login({ onLogin }: { onLogin: (token: string) => void }) {
           <LayoutDashboard size={32} />
         </div>
         <h2 className="text-2xl font-bold">Acesso do Professor</h2>
-        <p className="text-gray-500">Entre com suas credenciais para gerenciar suas aulas.</p>
-        <div className="text-[10px] text-gray-400 uppercase font-bold">Dica: admin / padel2026</div>
+        <p className="text-gray-500">Entre com sua conta Google para gerenciar suas aulas.</p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="space-y-1">
-          <label className="text-xs font-bold text-gray-400 uppercase">Usuário</label>
-          <input 
-            required
-            type="text"
-            className="w-full px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none"
-            value={username}
-            onChange={e => setUsername(e.target.value)}
-          />
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs font-bold text-gray-400 uppercase">Senha</label>
-          <input 
-            required
-            type="password"
-            className="w-full px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-          />
-        </div>
-
+      <div className="space-y-4">
         {error && <p className="text-red-500 text-sm font-medium text-center">{error}</p>}
 
         <button 
+          onClick={handleGoogleLogin}
           disabled={loading}
-          className="w-full bg-green-600 text-white py-4 rounded-xl font-bold shadow-lg shadow-green-200 hover:bg-green-700 transition-all disabled:opacity-50"
+          className="w-full bg-white border border-gray-200 text-gray-700 py-4 rounded-xl font-bold shadow-sm hover:bg-gray-50 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
         >
-          {loading ? 'Entrando...' : 'Entrar no Sistema'}
+          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
+          {loading ? 'Entrando...' : 'Entrar com Google'}
         </button>
-      </form>
+      </div>
     </motion.div>
   );
 }
 
-function AdminDashboard({ token }: { token: string }) {
+function AdminDashboard({ user }: { user: any }) {
   const [tab, setTab] = useState<'schedule' | 'bookings' | 'finance' | 'locations'>('schedule');
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [finance, setFinance] = useState<FinanceSummary | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchData();
-  }, [tab]);
-
-  const fetchData = () => {
-    setLoading(true);
-    setTimeout(() => {
-      const allBookings: Booking[] = getStorage('padel_bookings', []);
-      
-      if (tab === 'bookings') {
-        setBookings(allBookings.sort((a, b) => b.id - a.id));
-      } else if (tab === 'finance') {
+    let unsubscribe: () => void;
+    
+    if (tab === 'bookings') {
+      const q = query(collection(db, 'bookings'), orderBy('date', 'desc'), orderBy('time', 'desc'));
+      unsubscribe = onSnapshot(q, (snapshot) => {
+        const allBookings = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Booking));
+        setBookings(allBookings);
+        setLoading(false);
+      }, (error) => handleFirestoreError(error, OperationType.LIST, 'bookings'));
+    } else if (tab === 'finance') {
+      const unsubscribeBookings = onSnapshot(collection(db, 'bookings'), (snapshot) => {
+        const allBookings = snapshot.docs.map(doc => doc.data() as Booking);
         const total_revenue = allBookings.reduce((acc, b) => acc + b.price, 0);
         const total_paid = allBookings.filter(b => b.paid).reduce((acc, b) => acc + b.price, 0);
         const total_pending = total_revenue - total_paid;
@@ -541,17 +579,22 @@ function AdminDashboard({ token }: { token: string }) {
           total_pending,
           total_bookings: allBookings.length
         });
-      }
+        setLoading(false);
+      }, (error) => handleFirestoreError(error, OperationType.LIST, 'bookings'));
+      return () => unsubscribeBookings();
+    } else {
       setLoading(false);
-    }, 300);
-  };
+    }
+
+    return () => unsubscribe && unsubscribe();
+  }, [tab]);
 
   return (
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Painel de Controle</h2>
-          <p className="text-gray-500">Gerencie seus horários, alunos e finanças (Modo Local).</p>
+          <p className="text-gray-500">Gerencie seus horários, alunos e finanças.</p>
         </div>
         
         <div className="flex flex-wrap bg-white p-1 rounded-xl border border-gray-200 shadow-sm">
@@ -585,12 +628,12 @@ function AdminDashboard({ token }: { token: string }) {
       <AnimatePresence mode="wait">
         {tab === 'schedule' && (
           <motion.div key="schedule" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <ScheduleManager token={token} />
+            <ScheduleManager user={user} />
           </motion.div>
         )}
         {tab === 'locations' && (
           <motion.div key="locations" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <LocationManager token={token} />
+            <LocationManager user={user} />
           </motion.div>
         )}
         {tab === 'bookings' && (
@@ -641,11 +684,14 @@ function AdminDashboard({ token }: { token: string }) {
                       <td className="px-6 py-4">
                         <div className="flex gap-2">
                           <button 
-                            onClick={() => {
-                              const allBookings: Booking[] = getStorage('padel_bookings', []);
-                              const updated = allBookings.map(b => b.id === booking.id ? { ...b, paid: b.paid ? 0 : 1 } : b);
-                              setStorage('padel_bookings', updated);
-                              fetchData();
+                            onClick={async () => {
+                              try {
+                                await updateDoc(doc(db, 'bookings', booking.id), {
+                                  paid: !booking.paid
+                                });
+                              } catch (error) {
+                                handleFirestoreError(error, OperationType.UPDATE, 'bookings');
+                              }
                             }}
                             className="p-2 text-gray-400 hover:text-green-600 transition-colors"
                             title={booking.paid ? "Marcar como não pago" : "Marcar como pago"}
@@ -653,17 +699,14 @@ function AdminDashboard({ token }: { token: string }) {
                             <DollarSign size={18} />
                           </button>
                           <button 
-                            onClick={() => {
+                            onClick={async () => {
                               if (confirm('Deseja realmente cancelar esta reserva?')) {
-                                const allBookings: Booking[] = getStorage('padel_bookings', []);
-                                const allSlots: Slot[] = getStorage('padel_slots', []);
-                                
-                                const updatedBookings = allBookings.filter(b => b.id !== booking.id);
-                                const updatedSlots = allSlots.map(s => s.id === booking.slot_id ? { ...s, is_available: 1 } : s);
-                                
-                                setStorage('padel_bookings', updatedBookings);
-                                setStorage('padel_slots', updatedSlots);
-                                fetchData();
+                                try {
+                                  await updateDoc(doc(db, 'slots', booking.slot_id), { is_available: true });
+                                  await deleteDoc(doc(db, 'bookings', booking.id));
+                                } catch (error) {
+                                  handleFirestoreError(error, OperationType.DELETE, 'bookings');
+                                }
                               }
                             }}
                             className="p-2 text-gray-400 hover:text-red-600 transition-colors"
@@ -684,57 +727,12 @@ function AdminDashboard({ token }: { token: string }) {
             </div>
           </motion.div>
         )}
-        {tab === 'finance' && finance && (
-          <motion.div 
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="grid md:grid-cols-3 gap-6"
-          >
-            <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 space-y-4">
-              <div className="w-12 h-12 bg-green-50 text-green-600 rounded-2xl flex items-center justify-center">
-                <TrendingUp size={24} />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-gray-400 uppercase tracking-wider">Receita Total</p>
-                <h3 className="text-3xl font-bold">R$ {finance.total_revenue.toFixed(2)}</h3>
-              </div>
-              <p className="text-xs text-gray-400">Total de {finance.total_bookings} aulas agendadas</p>
-            </div>
-
-            <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 space-y-4">
-              <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center">
-                <CheckCircle size={24} />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-gray-400 uppercase tracking-wider">Total Recebido</p>
-                <h3 className="text-3xl font-bold text-blue-600">R$ {finance.total_paid.toFixed(2)}</h3>
-              </div>
-              <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden">
-                <div 
-                  className="bg-blue-600 h-full" 
-                  style={{ width: finance.total_revenue > 0 ? `${(finance.total_paid / finance.total_revenue) * 100}%` : '0%' }}
-                />
-              </div>
-            </div>
-
-            <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 space-y-4">
-              <div className="w-12 h-12 bg-yellow-50 text-yellow-600 rounded-2xl flex items-center justify-center">
-                <Clock size={24} />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-gray-400 uppercase tracking-wider">Pendente</p>
-                <h3 className="text-3xl font-bold text-yellow-600">R$ {finance.total_pending.toFixed(2)}</h3>
-              </div>
-              <p className="text-xs text-gray-400">Aguardando pagamento dos alunos</p>
-            </div>
-          </motion.div>
-        )}
       </AnimatePresence>
     </div>
   );
 }
 
-function ScheduleManager({ token }: { token: string }) {
+function ScheduleManager({ user }: { user: any }) {
   const [locations, setLocations] = useState<Location[]>([]);
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
   const [selectedDate, setSelectedDate] = useState(startOfToday());
@@ -743,7 +741,6 @@ function ScheduleManager({ token }: { token: string }) {
   const [datesWithSlots, setDatesWithSlots] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
-  const [warning, setWarning] = useState<string | null>(null);
 
   const timeSlots = [
     '07:00', '08:00', '09:00', '10:00', '11:00', '12:00',
@@ -752,68 +749,70 @@ function ScheduleManager({ token }: { token: string }) {
   ];
 
   useEffect(() => {
-    setLocations(getStorage('padel_locations', INITIAL_LOCATIONS));
+    const unsubscribe = onSnapshot(collection(db, 'locations'), (snapshot) => {
+      const locs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Location));
+      setLocations(locs);
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'locations'));
+    return () => unsubscribe();
   }, []);
 
   useEffect(() => {
     if (selectedLocation) {
-      fetchDatesWithSlots();
+      const q = query(collection(db, 'slots'), where('location_id', '==', selectedLocation.id));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const slots = snapshot.docs.map(doc => doc.data() as Slot);
+        const dates = [...new Set(slots.map(s => s.date))];
+        setDatesWithSlots(dates);
+      }, (error) => handleFirestoreError(error, OperationType.LIST, 'slots'));
+      return () => unsubscribe();
     }
   }, [selectedLocation]);
 
   useEffect(() => {
     if (selectedLocation && selectedDate) {
-      fetchExistingSlots();
+      const dateStr = format(selectedDate, 'yyyy-MM-dd');
+      const q = query(collection(db, 'slots'), where('location_id', '==', selectedLocation.id), where('date', '==', dateStr));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const filtered = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Slot));
+        setExistingSlots(filtered.sort((a, b) => a.time.localeCompare(b.time)));
+      }, (error) => handleFirestoreError(error, OperationType.LIST, 'slots'));
+      return () => unsubscribe();
     }
   }, [selectedDate, selectedLocation]);
 
-  const fetchDatesWithSlots = () => {
-    const allSlots: Slot[] = getStorage('padel_slots', []);
-    const dates = [...new Set(allSlots.filter(s => s.location_id === selectedLocation?.id).map(s => s.date))];
-    setDatesWithSlots(dates);
-  };
-
-  const fetchExistingSlots = () => {
-    const allSlots: Slot[] = getStorage('padel_slots', []);
-    const filtered = allSlots.filter(s => s.location_id === selectedLocation?.id && s.date === format(selectedDate, 'yyyy-MM-dd'));
-    setExistingSlots(filtered);
-  };
-
-  const handleSaveSlots = () => {
+  const handleSaveSlots = async () => {
     if (!selectedLocation || availableTimes.length === 0) return;
     
     setLoading(true);
-    setTimeout(() => {
-      const allSlots: Slot[] = getStorage('padel_slots', []);
+    try {
       const dateStr = format(selectedDate, 'yyyy-MM-dd');
       
-      const newSlots = availableTimes.map(time => ({
-        id: Date.now() + Math.random(),
-        location_id: selectedLocation.id,
-        date: dateStr,
-        time,
-        is_available: 1
-      }));
+      for (const time of availableTimes) {
+        const slotId = `${selectedLocation.id}_${dateStr}_${time.replace(':', '')}`;
+        await setDoc(doc(db, 'slots', slotId), {
+          location_id: selectedLocation.id,
+          date: dateStr,
+          time,
+          is_available: true
+        });
+      }
 
-      // Filter out existing
-      const filteredNew = newSlots.filter(ns => !allSlots.some(os => os.date === ns.date && os.time === ns.time && os.location_id === ns.location_id));
-      
-      setStorage('padel_slots', [...allSlots, ...filteredNew]);
       setShowSuccess(true);
       setAvailableTimes([]);
-      fetchExistingSlots();
-      fetchDatesWithSlots();
-      setLoading(false);
       setTimeout(() => setShowSuccess(false), 3000);
-    }, 500);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'slots');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleDeleteSlot = (id: number) => {
-    const allSlots: Slot[] = getStorage('padel_slots', []);
-    const updated = allSlots.filter(s => s.id !== id);
-    setStorage('padel_slots', updated);
-    fetchExistingSlots();
-    fetchDatesWithSlots();
+  const handleDeleteSlot = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'slots', id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, 'slots');
+    }
   };
 
   return (
@@ -958,33 +957,36 @@ function ScheduleManager({ token }: { token: string }) {
   );
 }
 
-function LocationManager({ token }: { token: string }) {
+function LocationManager({ user }: { user: any }) {
   const [locations, setLocations] = useState<Location[]>([]);
   const [newName, setNewName] = useState('');
-  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    setLocations(getStorage('padel_locations', INITIAL_LOCATIONS));
+    const unsubscribe = onSnapshot(collection(db, 'locations'), (snapshot) => {
+      const locs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Location));
+      setLocations(locs);
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'locations'));
+    return () => unsubscribe();
   }, []);
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!newName.trim()) return;
-    const newLoc = { id: Date.now(), name: newName };
-    const updated = [...locations, newLoc];
-    setLocations(updated);
-    setStorage('padel_locations', updated);
-    setNewName('');
+    try {
+      const id = Date.now().toString();
+      await setDoc(doc(db, 'locations', id), { name: newName });
+      setNewName('');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'locations');
+    }
   };
 
-  const handleDelete = (id: number) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Deseja remover este local? Todos os horários vinculados serão perdidos.')) {
-      const updated = locations.filter(l => l.id !== id);
-      setLocations(updated);
-      setStorage('padel_locations', updated);
-      
-      // Also cleanup slots
-      const allSlots: Slot[] = getStorage('padel_slots', []);
-      setStorage('padel_slots', allSlots.filter(s => s.location_id !== id));
+      try {
+        await deleteDoc(doc(db, 'locations', id));
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, 'locations');
+      }
     }
   };
 

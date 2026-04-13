@@ -1,25 +1,24 @@
 export interface Location {
-  id: number;
+  id: string;
   name: string;
 }
 
 export interface Slot {
-  id: number;
-  location_id: number;
+  id: string;
+  location_id: string;
   date: string;
   time: string;
-  is_available: number;
+  is_available: boolean;
 }
 
 export interface Booking {
-  id: number;
-  slot_id: number;
+  id: string;
+  slot_id: string;
   student_name: string;
   student_phone: string;
   booking_type: string;
   price: number;
-  paid: number;
-  created_at: string;
+  paid: boolean;
   date: string;
   time: string;
   location_name: string;
