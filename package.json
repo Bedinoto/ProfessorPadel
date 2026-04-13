@@ -3,11 +3,11 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "main": "server.ts",
+  "main": "app.ts",
   "scripts": {
-    "dev": "tsx server.ts",
+    "dev": "tsx app.ts",
     "build": "vite build",
-    "start": "tsx server.ts",
+    "start": "tsx app.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit"
