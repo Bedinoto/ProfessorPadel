@@ -2,43 +2,54 @@ import express from "express";
 import path from "path";
 import cors from "cors";
 import fs from "fs";
+import { fileURLToPath } from 'url';
 
 const app = express();
-// Hostinger requires process.env.PORT
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
 
-// --- PING FOR 503 TEST ---
+// --- LOGGING ---
+const logFile = path.join(process.cwd(), "server_log.txt");
+function log(msg: string) {
+  const line = `${new Date().toISOString()}: ${msg}\n`;
+  try {
+    fs.appendFileSync(logFile, line);
+  } catch (e) {}
+  console.log(msg);
+}
+
+log("SERVER STARTING (ESM)...");
+
 app.get("/ping", (req, res) => {
   res.status(200).send("pong");
 });
 
-// --- SERVING FRONTEND ---
-// Using a more robust path resolution for Hostinger
+// In ESM, we derive __dirname if needed, but process.cwd() is usually fine for dist
 const distPath = path.resolve(process.cwd(), "dist");
 
 app.use(express.static(distPath));
 
-app.get("*", (req, res) => {
+app.get("*", (req, res, next) => {
+  if (req.path.startsWith('/api/')) return next();
+  
   const indexPath = path.join(distPath, "index.html");
   if (fs.existsSync(indexPath)) {
     res.sendFile(indexPath);
   } else {
     res.status(200).send(`
-      <h1>Servidor Node.js Ativo</h1>
+      <h1>Servidor Node.js Ativo (ESM)</h1>
       <p>Pasta 'dist' não encontrada em: ${distPath}</p>
-      <p>Certifique-se de que o comando 'npm run build' foi executado com sucesso.</p>
+      <p>CWD: ${process.cwd()}</p>
     `);
   }
 });
 
-// Global error logger for Hostinger
-process.on('uncaughtException', (err) => {
-  fs.writeFileSync('erro_fatal.txt', `${new Date().toISOString()}: ${err.message}\n${err.stack}`);
+app.listen(Number(PORT), "0.0.0.0", () => {
+  log(`SERVER RUNNING ON PORT ${PORT}`);
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+process.on('uncaughtException', (err) => {
+  log(`FATAL EXCEPTION: ${err.message}\n${err.stack}`);
 });
