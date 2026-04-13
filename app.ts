@@ -9,33 +9,15 @@ import { format } from "date-fns";
 
 dotenv.config();
 
-// --- GLOBAL ERROR HANDLING ---
-process.on('uncaughtException', (err) => {
-  console.error('UNCAUGHT EXCEPTION! Shutting down...');
-  console.error(err.name, err.message, err.stack);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('UNHANDLED REJECTION! Shutting down...');
-  console.error(reason);
-});
-
-// Validate environment variables
-const requiredEnv = ['MYSQL_HOST', 'MYSQL_USER', 'MYSQL_PASSWORD', 'MYSQL_DATABASE'];
-const missingEnv = requiredEnv.filter(key => !process.env[key]);
-
-console.log("--- Environment Check ---");
-console.log(`NODE_ENV: ${process.env.NODE_ENV}`);
-console.log(`PORT: ${process.env.PORT}`);
-console.log(`JWT_SECRET: ${process.env.JWT_SECRET ? 'Configured' : 'Using Default'}`);
-requiredEnv.forEach(key => {
-  console.log(`${key}: ${process.env[key] ? 'Present' : 'MISSING'}`);
-});
-console.log("-------------------------");
+console.log("SERVER INITIALIZING...");
 
 const app = express();
+// Hostinger can pass a port or a socket path
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "padel_secret_key";
+
+// Immediate response for health checks to prevent 503
+app.get("/ping", (req, res) => res.send("pong"));
 
 app.use(cors());
 app.use(express.json());
