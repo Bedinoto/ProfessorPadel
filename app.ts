@@ -301,17 +301,20 @@ app.get("/api/admin/finance", authenticateToken, async (req, res) => {
 
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
+    try {
+      // @ts-ignore - Dynamic import for dev only
+      const { createServer: createViteServer } = await import("vite");
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+      console.log("Vite middleware loaded (Development)");
+    } catch (e) {
+      console.error("Failed to load Vite middleware:", e);
+    }
   } else {
-    const __dirname = path.dirname(new URL(import.meta.url).pathname);
-    // On Windows, pathname might start with /C:/, so we handle that
-    const normalizedDirname = process.platform === 'win32' ? __dirname.substring(1) : __dirname;
-    const distPath = path.join(process.cwd(), "dist");
-    
+    const distPath = path.resolve(process.cwd(), "dist");
     console.log(`Production mode: serving static files from ${distPath}`);
     
     app.use(express.static(distPath));
@@ -321,7 +324,9 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`>>> SERVER STARTED SUCCESSFULY <<<`);
+    console.log(`Listening on port: ${PORT}`);
+    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   });
 }
 
