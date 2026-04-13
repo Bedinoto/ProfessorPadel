@@ -21,11 +21,12 @@ import {
   ChevronRight,
   Loader2,
   Users,
-  TrendingUp
+  TrendingUp,
+  MapPin
 } from 'lucide-react';
 import { format, addDays, startOfToday, isSameDay, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Slot, Booking, FinanceSummary } from './types';
+import { Slot, Booking, FinanceSummary, Location } from './types';
 
 // --- API HELPERS ---
 const API_URL = '';
@@ -116,6 +117,8 @@ export default function App() {
 // --- COMPONENTS ---
 
 function PublicBooking() {
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
   const [selectedDate, setSelectedDate] = useState(startOfToday());
   const [availableDays, setAvailableDays] = useState<string[]>([]);
   const [slots, setSlots] = useState<Slot[]>([]);
@@ -131,26 +134,41 @@ function PublicBooking() {
   ];
 
   useEffect(() => {
-    fetchAvailableDays();
+    fetchLocations();
   }, []);
 
   useEffect(() => {
-    fetchSlots();
-  }, [selectedDate]);
+    if (selectedLocation) {
+      fetchAvailableDays();
+    }
+  }, [selectedLocation]);
+
+  useEffect(() => {
+    if (selectedLocation && selectedDate) {
+      fetchSlots();
+    }
+  }, [selectedDate, selectedLocation]);
+
+  const fetchLocations = async () => {
+    const res = await fetch(`${API_URL}/api/locations`);
+    const data = await res.json();
+    setLocations(data);
+  };
 
   const fetchAvailableDays = async () => {
-    const res = await fetch(`${API_URL}/api/available-days`);
+    if (!selectedLocation) return;
+    const res = await fetch(`${API_URL}/api/available-days?location_id=${selectedLocation.id}`);
     const data = await res.json();
     setAvailableDays(data);
     
-    // If current selected date is not in available days, select the first available one
     if (data.length > 0 && !data.includes(format(selectedDate, 'yyyy-MM-dd'))) {
       setSelectedDate(parseISO(data[0]));
     }
   };
 
   const fetchSlots = async () => {
-    const res = await fetch(`${API_URL}/api/available-slots?date=${format(selectedDate, 'yyyy-MM-dd')}`);
+    if (!selectedLocation) return;
+    const res = await fetch(`${API_URL}/api/available-slots?date=${format(selectedDate, 'yyyy-MM-dd')}&location_id=${selectedLocation.id}`);
     const data = await res.json();
     setSlots(data);
   };
@@ -176,7 +194,7 @@ function PublicBooking() {
       
       if (res.ok) {
         setStatus('success');
-        fetchAvailableDays(); // Refresh available days list
+        fetchAvailableDays();
         fetchSlots();
         setSelectedSlot(null);
         setFormData({ name: '', phone: '', type: 'Individual' });
@@ -197,81 +215,125 @@ function PublicBooking() {
     >
       <div className="text-center space-y-2">
         <h2 className="text-3xl font-bold tracking-tight">Reserve sua Aula</h2>
-        <p className="text-gray-500">Escolha um horário disponível e comece a treinar!</p>
+        <p className="text-gray-500">Escolha o local e horário para começar a treinar!</p>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-8">
-        {/* Calendar / Date Picker */}
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-semibold flex items-center gap-2">
-              <CalendarIcon size={18} className="text-green-600" />
-              Selecione o Dia
-            </h3>
-          </div>
-          
-          {availableDays.length === 0 ? (
-            <div className="py-8 text-center text-gray-400 text-sm">
-              Nenhum dia com horários disponíveis no momento.
-            </div>
-          ) : (
-            <div className="grid grid-cols-4 gap-2">
-              {availableDays.map((dateStr) => {
-                const date = parseISO(dateStr);
-                const isSelected = isSameDay(date, selectedDate);
-                return (
-                  <button
-                    key={dateStr}
-                    onClick={() => setSelectedDate(date)}
-                    className={`p-3 rounded-xl flex flex-col items-center transition-all ${
-                      isSelected 
-                        ? 'bg-green-600 text-white shadow-lg shadow-green-200' 
-                        : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                    }`}
-                  >
-                    <span className="text-[10px] uppercase font-bold opacity-70">
-                      {format(date, 'EEE', { locale: ptBR })}
-                    </span>
-                    <span className="text-lg font-bold">
-                      {format(date, 'dd')}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Slots List */}
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 space-y-4">
-          <h3 className="font-semibold flex items-center gap-2">
-            <Clock size={18} className="text-green-600" />
-            Horários Disponíveis
-          </h3>
-          
-          {slots.length === 0 ? (
-            <div className="py-12 text-center text-gray-400">
-              Nenhum horário disponível para este dia.
-            </div>
-          ) : (
-            <div className="grid grid-cols-3 gap-2">
-              {slots.map((slot) => (
-                <button
-                  key={slot.id}
-                  onClick={() => setSelectedSlot(slot)}
-                  className={`p-3 rounded-xl font-medium transition-all ${
-                    selectedSlot?.id === slot.id
-                      ? 'bg-green-600 text-white ring-2 ring-green-200'
-                      : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
-                  }`}
-                >
-                  {slot.time}
-                </button>
-              ))}
-            </div>
-          )}
+      {/* Location Selector */}
+      <div className="space-y-4">
+        <p className="text-center text-sm font-bold text-gray-400 uppercase tracking-widest">1. Selecione o Local</p>
+        <div className="flex flex-wrap justify-center gap-3">
+          {locations.map(loc => (
+            <button
+              key={loc.id}
+              onClick={() => setSelectedLocation(loc)}
+              className={`px-6 py-3 rounded-2xl font-bold transition-all ${
+                selectedLocation?.id === loc.id
+                  ? 'bg-green-600 text-white shadow-lg shadow-green-200 scale-105'
+                  : 'bg-white text-gray-600 border border-gray-100 hover:bg-gray-50'
+              }`}
+            >
+              {loc.name}
+            </button>
+          ))}
         </div>
       </div>
+
+      <AnimatePresence mode="wait">
+        {selectedLocation ? (
+          <motion.div 
+            key="agenda"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="space-y-8"
+          >
+            <div className="grid md:grid-cols-2 gap-8">
+              {/* Calendar / Date Picker */}
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold flex items-center gap-2">
+                    <CalendarIcon size={18} className="text-green-600" />
+                    2. Selecione o Dia
+                  </h3>
+                </div>
+                
+                {availableDays.length === 0 ? (
+                  <div className="py-8 text-center text-gray-400 text-sm">
+                    Nenhum dia com horários disponíveis neste local.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-4 gap-2">
+                    {availableDays.map((dateStr) => {
+                      const date = parseISO(dateStr);
+                      const isSelected = isSameDay(date, selectedDate);
+                      return (
+                        <button
+                          key={dateStr}
+                          onClick={() => setSelectedDate(date)}
+                          className={`p-3 rounded-xl flex flex-col items-center transition-all ${
+                            isSelected 
+                              ? 'bg-green-600 text-white shadow-lg shadow-green-200' 
+                              : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                          }`}
+                        >
+                          <span className="text-[10px] uppercase font-bold opacity-70">
+                            {format(date, 'EEE', { locale: ptBR })}
+                          </span>
+                          <span className="text-lg font-bold">
+                            {format(date, 'dd')}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Slots List */}
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 space-y-4">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <Clock size={18} className="text-green-600" />
+                  3. Horários Disponíveis
+                </h3>
+                
+                {slots.length === 0 ? (
+                  <div className="py-12 text-center text-gray-400">
+                    Nenhum horário disponível para este dia.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 gap-2">
+                    {slots.map((slot) => (
+                      <button
+                        key={slot.id}
+                        onClick={() => setSelectedSlot(slot)}
+                        className={`p-3 rounded-xl font-medium transition-all ${
+                          selectedSlot?.id === slot.id
+                            ? 'bg-green-600 text-white ring-2 ring-green-200'
+                            : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
+                        }`}
+                      >
+                        {slot.time}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        ) : (
+          <motion.div 
+            key="placeholder"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="py-20 text-center space-y-4 bg-white/50 rounded-3xl border-2 border-dashed border-gray-200"
+          >
+            <div className="w-16 h-16 bg-gray-100 text-gray-400 rounded-full flex items-center justify-center mx-auto">
+              <MapPin size={32} />
+            </div>
+            <p className="text-gray-500 font-medium">Selecione um local acima para ver a agenda</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Booking Form */}
       {selectedSlot && (
@@ -457,7 +519,7 @@ function Login({ onLogin }: { onLogin: (token: string) => void }) {
 }
 
 function AdminDashboard({ token }: { token: string }) {
-  const [tab, setTab] = useState<'schedule' | 'bookings' | 'finance'>('schedule');
+  const [tab, setTab] = useState<'schedule' | 'bookings' | 'finance' | 'locations'>('schedule');
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [finance, setFinance] = useState<FinanceSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -474,11 +536,15 @@ function AdminDashboard({ token }: { token: string }) {
       if (tab === 'bookings') {
         const res = await fetch(`${API_URL}/api/admin/bookings`, { headers });
         const data = await res.json();
-        setBookings(data);
+        if (res.ok) {
+          setBookings(Array.isArray(data) ? data : []);
+        }
       } else if (tab === 'finance') {
         const res = await fetch(`${API_URL}/api/admin/finance`, { headers });
         const data = await res.json();
-        setFinance(data);
+        if (res.ok) {
+          setFinance(data);
+        }
       }
     } catch (err) {
       console.error(err);
@@ -495,12 +561,18 @@ function AdminDashboard({ token }: { token: string }) {
           <p className="text-gray-500">Gerencie seus horários, alunos e finanças.</p>
         </div>
         
-        <div className="flex bg-white p-1 rounded-xl border border-gray-200 shadow-sm">
+        <div className="flex flex-wrap bg-white p-1 rounded-xl border border-gray-200 shadow-sm">
           <button 
             onClick={() => setTab('schedule')}
             className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${tab === 'schedule' ? 'bg-green-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-700'}`}
           >
             Agenda
+          </button>
+          <button 
+            onClick={() => setTab('locations')}
+            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${tab === 'locations' ? 'bg-green-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            Locais
           </button>
           <button 
             onClick={() => setTab('bookings')}
@@ -523,6 +595,11 @@ function AdminDashboard({ token }: { token: string }) {
             <ScheduleManager token={token} />
           </motion.div>
         )}
+        {tab === 'locations' && (
+          <motion.div key="locations" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <LocationManager token={token} />
+          </motion.div>
+        )}
         {tab === 'bookings' && (
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
@@ -540,6 +617,7 @@ function AdminDashboard({ token }: { token: string }) {
                 <thead>
                   <tr className="bg-gray-50 text-[10px] uppercase font-bold text-gray-400 tracking-wider">
                     <th className="px-6 py-4">Data/Hora</th>
+                    <th className="px-6 py-4">Local</th>
                     <th className="px-6 py-4">Aluno</th>
                     <th className="px-6 py-4">Tipo</th>
                     <th className="px-6 py-4">Status</th>
@@ -553,6 +631,7 @@ function AdminDashboard({ token }: { token: string }) {
                         <div className="font-bold text-sm">{format(parseISO(booking.date), 'dd/MM')}</div>
                         <div className="text-xs text-gray-400">{booking.time}</div>
                       </td>
+                      <td className="px-6 py-4 font-medium text-sm">{booking.location_name}</td>
                       <td className="px-6 py-4">
                         <div className="font-medium">{booking.student_name}</div>
                         <div className="text-xs text-gray-400">{booking.student_phone}</div>
@@ -605,7 +684,7 @@ function AdminDashboard({ token }: { token: string }) {
                   ))}
                   {bookings.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="px-6 py-12 text-center text-gray-400">Nenhuma reserva encontrada.</td>
+                      <td colSpan={6} className="px-6 py-12 text-center text-gray-400">Nenhuma reserva encontrada.</td>
                     </tr>
                   )}
                 </tbody>
@@ -664,6 +743,8 @@ function AdminDashboard({ token }: { token: string }) {
 }
 
 function ScheduleManager({ token }: { token: string }) {
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
   const [selectedDate, setSelectedDate] = useState(startOfToday());
   const [availableTimes, setAvailableTimes] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -674,6 +755,27 @@ function ScheduleManager({ token }: { token: string }) {
     '19:00', '20:00', '21:00', '22:00'
   ];
 
+  useEffect(() => {
+    fetchLocations();
+  }, []);
+
+  const fetchLocations = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/admin/locations`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setLocations(Array.isArray(data) ? data : []);
+        if (Array.isArray(data) && data.length > 0) setSelectedLocation(data[0]);
+      } else {
+        console.error('Error fetching locations:', data.error);
+      }
+    } catch (err) {
+      console.error('Connection error:', err);
+    }
+  };
+
   const toggleTime = (time: string) => {
     if (availableTimes.includes(time)) {
       setAvailableTimes(availableTimes.filter(t => t !== time));
@@ -683,6 +785,7 @@ function ScheduleManager({ token }: { token: string }) {
   };
 
   const saveAvailability = async () => {
+    if (!selectedLocation) return;
     setLoading(true);
     try {
       await fetch(`${API_URL}/api/admin/slots`, {
@@ -693,10 +796,12 @@ function ScheduleManager({ token }: { token: string }) {
         },
         body: JSON.stringify({
           date: format(selectedDate, 'yyyy-MM-dd'),
-          times: availableTimes
+          times: availableTimes,
+          location_id: selectedLocation.id
         })
       });
       alert('Horários salvos com sucesso!');
+      setAvailableTimes([]);
     } catch (err) {
       alert('Erro ao salvar horários');
     } finally {
@@ -705,71 +810,210 @@ function ScheduleManager({ token }: { token: string }) {
   };
 
   return (
-    <motion.div 
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="grid md:grid-cols-2 gap-8"
-    >
-      <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 space-y-6">
-        <h3 className="font-bold text-lg flex items-center gap-2">
-          <CalendarIcon size={20} className="text-green-600" />
-          1. Escolha o Dia
-        </h3>
-        <div className="grid grid-cols-4 gap-2">
-          {[...Array(12)].map((_, i) => {
-            const date = addDays(startOfToday(), i);
-            const isSelected = isSameDay(date, selectedDate);
-            return (
-              <button
-                key={i}
-                onClick={() => setSelectedDate(date)}
-                className={`p-3 rounded-xl flex flex-col items-center transition-all ${
-                  isSelected 
-                    ? 'bg-green-600 text-white shadow-lg shadow-green-200' 
-                    : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                }`}
-              >
-                <span className="text-[10px] uppercase font-bold opacity-70">
-                  {format(date, 'EEE', { locale: ptBR })}
-                </span>
-                <span className="text-lg font-bold">
-                  {format(date, 'dd')}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+    <div className="space-y-8">
+      {/* Location Selector */}
+      <div className="flex flex-wrap gap-3">
+        {locations.map(loc => (
+          <button
+            key={loc.id}
+            onClick={() => setSelectedLocation(loc)}
+            className={`px-6 py-3 rounded-2xl font-bold transition-all ${
+              selectedLocation?.id === loc.id
+                ? 'bg-green-600 text-white shadow-lg shadow-green-200'
+                : 'bg-white text-gray-600 border border-gray-100 hover:bg-gray-50'
+            }`}
+          >
+            {loc.name}
+          </button>
+        ))}
+        {locations.length === 0 && (
+          <p className="text-gray-400 text-sm py-2">Cadastre um local primeiro na aba "Locais".</p>
+        )}
       </div>
 
-      <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 space-y-6">
-        <h3 className="font-bold text-lg flex items-center gap-2">
-          <Clock size={20} className="text-green-600" />
-          2. Defina os Horários
-        </h3>
-        <div className="grid grid-cols-4 gap-2">
-          {timeSlots.map(time => (
-            <button
-              key={time}
-              onClick={() => toggleTime(time)}
-              className={`p-2 rounded-lg text-sm font-bold transition-all ${
-                availableTimes.includes(time)
-                  ? 'bg-green-600 text-white shadow-md'
-                  : 'bg-gray-50 text-gray-500 hover:bg-gray-100'
-              }`}
-            >
-              {time}
-            </button>
-          ))}
+      <motion.div 
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="grid md:grid-cols-2 gap-8"
+      >
+        <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 space-y-6">
+          <h3 className="font-bold text-lg flex items-center gap-2">
+            <CalendarIcon size={20} className="text-green-600" />
+            1. Escolha o Dia
+          </h3>
+          <div className="grid grid-cols-4 gap-2">
+            {[...Array(12)].map((_, i) => {
+              const date = addDays(startOfToday(), i);
+              const isSelected = isSameDay(date, selectedDate);
+              return (
+                <button
+                  key={i}
+                  onClick={() => setSelectedDate(date)}
+                  className={`p-3 rounded-xl flex flex-col items-center transition-all ${
+                    isSelected 
+                      ? 'bg-green-600 text-white shadow-lg shadow-green-200' 
+                      : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  <span className="text-[10px] uppercase font-bold opacity-70">
+                    {format(date, 'EEE', { locale: ptBR })}
+                  </span>
+                  <span className="text-lg font-bold">
+                    {format(date, 'dd')}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
-        <button 
-          onClick={saveAvailability}
-          disabled={loading || availableTimes.length === 0}
-          className="w-full bg-gray-900 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-black transition-all disabled:opacity-50"
-        >
-          {loading ? 'Salvando...' : 'Salvar Disponibilidade'}
-        </button>
+
+        <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 space-y-6">
+          <h3 className="font-bold text-lg flex items-center gap-2">
+            <Clock size={20} className="text-green-600" />
+            2. Defina os Horários
+          </h3>
+          <div className="grid grid-cols-4 gap-2">
+            {timeSlots.map(time => (
+              <button
+                key={time}
+                onClick={() => toggleTime(time)}
+                className={`p-2 rounded-lg text-sm font-bold transition-all ${
+                  availableTimes.includes(time)
+                    ? 'bg-green-600 text-white shadow-md'
+                    : 'bg-gray-50 text-gray-500 hover:bg-gray-100'
+                }`}
+              >
+                {time}
+              </button>
+            ))}
+          </div>
+          <button 
+            onClick={saveAvailability}
+            disabled={loading || availableTimes.length === 0 || !selectedLocation}
+            className="w-full bg-gray-900 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-black transition-all disabled:opacity-50"
+          >
+            {loading ? 'Salvando...' : 'Salvar Disponibilidade'}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function LocationManager({ token }: { token: string }) {
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [newName, setNewName] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    fetchLocations();
+  }, []);
+
+  const fetchLocations = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/admin/locations`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setLocations(Array.isArray(data) ? data : []);
+      } else {
+        console.error('Error fetching locations:', data.error);
+      }
+    } catch (err) {
+      console.error('Connection error:', err);
+    }
+  };
+
+  const handleAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newName) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/admin/locations`, {
+        method: 'POST',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ name: newName })
+      });
+      if (res.ok) {
+        setNewName('');
+        fetchLocations();
+      } else {
+        const data = await res.json();
+        alert(data.error);
+      }
+    } catch (err) {
+      alert('Erro ao adicionar local');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!confirm('Deseja remover este local?')) return;
+    try {
+      const res = await fetch(`${API_URL}/api/admin/locations/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        fetchLocations();
+      } else {
+        const data = await res.json();
+        alert(data.error);
+      }
+    } catch (err) {
+      alert('Erro ao remover local');
+    }
+  };
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-8">
+      <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 space-y-6">
+        <h3 className="font-bold text-lg">Cadastrar Novo Local</h3>
+        <form onSubmit={handleAdd} className="flex gap-2">
+          <input 
+            required
+            type="text"
+            placeholder="Ex: Arena Padel, Clube Social..."
+            className="flex-1 px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none"
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+          />
+          <button 
+            disabled={loading}
+            className="bg-green-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-green-200 hover:bg-green-700 transition-all disabled:opacity-50"
+          >
+            Adicionar
+          </button>
+        </form>
       </div>
-    </motion.div>
+
+      <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="p-6 border-b border-gray-50">
+          <h3 className="font-bold text-lg">Locais Cadastrados</h3>
+        </div>
+        <div className="divide-y divide-gray-50">
+          {locations.map(loc => (
+            <div key={loc.id} className="p-6 flex justify-between items-center hover:bg-gray-50 transition-colors">
+              <span className="font-medium">{loc.name}</span>
+              <button 
+                onClick={() => handleDelete(loc.id)}
+                className="p-2 text-gray-400 hover:text-red-600 transition-colors"
+              >
+                <Trash2 size={18} />
+              </button>
+            </div>
+          ))}
+          {locations.length === 0 && (
+            <div className="p-12 text-center text-gray-400">Nenhum local cadastrado.</div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 

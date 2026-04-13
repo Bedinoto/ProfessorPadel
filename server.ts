@@ -22,10 +22,10 @@ const authenticateToken = (req: any, res: any, next: any) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
-  if (!token) return res.sendStatus(401);
+  if (!token) return res.status(401).json({ error: "Token não fornecido" });
 
   jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
-    if (err) return res.sendStatus(403);
+    if (err) return res.status(403).json({ error: "Token inválido ou expirado" });
     req.user = user;
     next();
   });
@@ -35,13 +35,24 @@ const authenticateToken = (req: any, res: any, next: any) => {
 
 app.post("/api/login", (req, res) => {
   const { username, password } = req.body;
-  const user: any = db.prepare("SELECT * FROM users WHERE username = ?").get(username);
+  const cleanUsername = username?.trim().toLowerCase();
+  const cleanPassword = password?.trim();
 
-  if (!user) return res.status(400).json({ error: "Usuário não encontrado" });
+  console.log(`Login attempt for: ${cleanUsername}`);
+  const user: any = db.prepare("SELECT * FROM users WHERE LOWER(username) = ?").get(cleanUsername);
 
-  const validPassword = bcrypt.compareSync(password, user.password);
-  if (!validPassword) return res.status(400).json({ error: "Senha incorreta" });
+  if (!user) {
+    console.log("User not found");
+    return res.status(400).json({ error: "Usuário não encontrado" });
+  }
 
+  const validPassword = bcrypt.compareSync(cleanPassword, user.password);
+  if (!validPassword) {
+    console.log("Invalid password");
+    return res.status(400).json({ error: "Senha incorreta" });
+  }
+
+  console.log("Login successful");
   const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET);
   res.json({ token });
 });
@@ -56,21 +67,28 @@ if (adminCount.count === 0) {
 
 // --- PUBLIC ROUTES ---
 
-// Get available slots
+// Get all locations
+app.get("/api/locations", (req, res) => {
+  const locations = db.prepare("SELECT * FROM locations").all();
+  res.json(locations);
+});
+
+// Get available slots for a specific location and date
 app.get("/api/available-slots", (req, res) => {
-  const { date } = req.query;
-  const slots = db.prepare("SELECT * FROM slots WHERE date = ? AND is_available = 1").all(date);
+  const { date, location_id } = req.query;
+  const slots = db.prepare("SELECT * FROM slots WHERE date = ? AND location_id = ? AND is_available = 1").all(date, location_id);
   res.json(slots);
 });
 
-// Get list of dates that have available slots
+// Get list of dates that have available slots for a specific location
 app.get("/api/available-days", (req, res) => {
+  const { location_id } = req.query;
   const days = db.prepare(`
     SELECT DISTINCT date 
     FROM slots 
-    WHERE is_available = 1 AND date >= ?
+    WHERE is_available = 1 AND location_id = ? AND date >= ?
     ORDER BY date ASC
-  `).all(format(new Date(), 'yyyy-MM-dd'));
+  `).all(location_id, format(new Date(), 'yyyy-MM-dd'));
   res.json(days.map((d: any) => d.date));
 });
 
@@ -96,14 +114,40 @@ app.post("/api/bookings", (req, res) => {
 
 // --- PROFESSOR ROUTES (PROTECTED) ---
 
+// Location management
+app.get("/api/admin/locations", authenticateToken, (req, res) => {
+  const locations = db.prepare("SELECT * FROM locations").all();
+  res.json(locations);
+});
+
+app.post("/api/admin/locations", authenticateToken, (req, res) => {
+  const { name } = req.body;
+  try {
+    db.prepare("INSERT INTO locations (name) VALUES (?)").run(name);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(400).json({ error: "Local já existe ou nome inválido" });
+  }
+});
+
+app.delete("/api/admin/locations/:id", authenticateToken, (req, res) => {
+  const { id } = req.params;
+  try {
+    db.prepare("DELETE FROM locations WHERE id = ?").run(id);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Erro ao remover local (pode haver horários vinculados)" });
+  }
+});
+
 // Manage slots (Add/Remove availability)
 app.post("/api/admin/slots", authenticateToken, (req, res) => {
-  const { date, times } = req.body; // times is an array of strings like ["08:00", "09:00"]
+  const { date, times, location_id } = req.body;
   
   try {
-    const insert = db.prepare("INSERT OR IGNORE INTO slots (date, time, is_available) VALUES (?, ?, 1)");
+    const insert = db.prepare("INSERT OR IGNORE INTO slots (location_id, date, time, is_available) VALUES (?, ?, ?, 1)");
     const transaction = db.transaction((slots) => {
-      for (const time of slots) insert.run(date, time);
+      for (const time of slots) insert.run(location_id, date, time);
     });
     transaction(times);
     res.json({ success: true });
@@ -125,9 +169,10 @@ app.delete("/api/admin/slots/:id", authenticateToken, (req, res) => {
 // Get all bookings (Finance/Student control)
 app.get("/api/admin/bookings", authenticateToken, (req, res) => {
   const bookings = db.prepare(`
-    SELECT b.*, s.date, s.time 
+    SELECT b.*, s.date, s.time, l.name as location_name
     FROM bookings b 
     JOIN slots s ON b.slot_id = s.id 
+    JOIN locations l ON s.location_id = l.id
     ORDER BY s.date DESC, s.time DESC
   `).all();
   res.json(bookings);

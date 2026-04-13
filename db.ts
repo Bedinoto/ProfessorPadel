@@ -4,6 +4,7 @@ import fs from 'fs';
 
 const dbPath = path.join(process.cwd(), 'padel.db');
 const db = new Database(dbPath);
+db.pragma('foreign_keys = ON');
 
 // Initialize database
 db.exec(`
@@ -13,12 +14,19 @@ db.exec(`
     password TEXT
   );
 
+  CREATE TABLE IF NOT EXISTS locations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE
+  );
+
   CREATE TABLE IF NOT EXISTS slots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    location_id INTEGER,
     date TEXT,
     time TEXT,
     is_available INTEGER DEFAULT 1,
-    UNIQUE(date, time)
+    UNIQUE(location_id, date, time),
+    FOREIGN KEY(location_id) REFERENCES locations(id)
   );
 
   CREATE TABLE IF NOT EXISTS bookings (

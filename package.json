@@ -14,7 +14,7 @@
     "@google/genai": "^1.29.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
-    "bcryptjs": "^3.0.3",
+    "bcryptjs": "^2.4.3",
     "better-sqlite3": "^12.9.0",
     "cors": "^2.8.6",
     "date-fns": "^4.1.0",
