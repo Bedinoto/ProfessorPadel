@@ -141,19 +141,55 @@ app.delete("/api/admin/locations/:id", authenticateToken, (req, res) => {
 });
 
 // Manage slots (Add/Remove availability)
+app.get("/api/admin/all-slots-dates", authenticateToken, (req, res) => {
+  const { location_id } = req.query;
+  const dates = db.prepare(`
+    SELECT DISTINCT date 
+    FROM slots 
+    WHERE location_id = ?
+  `).all(location_id);
+  res.json(dates.map((d: any) => d.date));
+});
+
 app.post("/api/admin/slots", authenticateToken, (req, res) => {
   const { date, times, location_id } = req.body;
   
   try {
+    const checkDuplicate = db.prepare("SELECT location_id FROM slots WHERE date = ? AND time = ?");
     const insert = db.prepare("INSERT OR IGNORE INTO slots (location_id, date, time, is_available) VALUES (?, ?, ?, 1)");
+    
     const transaction = db.transaction((slots) => {
-      for (const time of slots) insert.run(location_id, date, time);
+      const duplicates = [];
+      for (const time of slots) {
+        const existing = checkDuplicate.get(date, time);
+        if (existing && existing.location_id !== parseInt(location_id)) {
+          duplicates.push(time);
+          continue;
+        }
+        insert.run(location_id, date, time);
+      }
+      return duplicates;
     });
-    transaction(times);
+
+    const duplicates = transaction(times);
+    
+    if (duplicates.length > 0) {
+      return res.json({ 
+        success: true, 
+        warning: `Alguns horários (${duplicates.join(", ")}) já estão ocupados em outro local e não foram duplicados.` 
+      });
+    }
+    
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: "Erro ao salvar horários" });
   }
+});
+
+app.get("/api/admin/slots", authenticateToken, (req, res) => {
+  const { date, location_id } = req.query;
+  const slots = db.prepare("SELECT * FROM slots WHERE date = ? AND location_id = ?").all(date, location_id);
+  res.json(slots);
 });
 
 app.delete("/api/admin/slots/:id", authenticateToken, (req, res) => {

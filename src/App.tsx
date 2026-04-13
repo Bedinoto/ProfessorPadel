@@ -59,7 +59,7 @@ export default function App() {
             <div className="bg-green-600 p-2 rounded-lg">
               <TrendingUp className="text-white w-5 h-5" />
             </div>
-            <h1 className="font-bold text-xl tracking-tight">Padel Pro <span className="text-green-600">Manager</span></h1>
+            <h1 className="font-bold text-xl tracking-tight">Instrutor <span className="text-green-600">Rafael Vielmo</span></h1>
           </div>
           
           <div className="flex gap-4 items-center">
@@ -747,7 +747,11 @@ function ScheduleManager({ token }: { token: string }) {
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
   const [selectedDate, setSelectedDate] = useState(startOfToday());
   const [availableTimes, setAvailableTimes] = useState<string[]>([]);
+  const [existingSlots, setExistingSlots] = useState<any[]>([]);
+  const [datesWithSlots, setDatesWithSlots] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [warning, setWarning] = useState<string | null>(null);
 
   const timeSlots = [
     '07:00', '08:00', '09:00', '10:00', '11:00', '12:00',
@@ -758,6 +762,48 @@ function ScheduleManager({ token }: { token: string }) {
   useEffect(() => {
     fetchLocations();
   }, []);
+
+  useEffect(() => {
+    if (selectedLocation) {
+      fetchDatesWithSlots();
+    }
+  }, [selectedLocation]);
+
+  useEffect(() => {
+    if (selectedLocation && selectedDate) {
+      fetchExistingSlots();
+    }
+  }, [selectedLocation, selectedDate]);
+
+  const fetchExistingSlots = async () => {
+    if (!selectedLocation) return;
+    try {
+      const res = await fetch(`${API_URL}/api/admin/slots?location_id=${selectedLocation.id}&date=${format(selectedDate, 'yyyy-MM-dd')}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setExistingSlots(data);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const fetchDatesWithSlots = async () => {
+    if (!selectedLocation) return;
+    try {
+      const res = await fetch(`${API_URL}/api/admin/all-slots-dates?location_id=${selectedLocation.id}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setDatesWithSlots(data);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const fetchLocations = async () => {
     try {
@@ -787,8 +833,9 @@ function ScheduleManager({ token }: { token: string }) {
   const saveAvailability = async () => {
     if (!selectedLocation) return;
     setLoading(true);
+    setWarning(null);
     try {
-      await fetch(`${API_URL}/api/admin/slots`, {
+      const res = await fetch(`${API_URL}/api/admin/slots`, {
         method: 'POST',
         headers: { 
           'Authorization': `Bearer ${token}`,
@@ -800,8 +847,18 @@ function ScheduleManager({ token }: { token: string }) {
           location_id: selectedLocation.id
         })
       });
-      alert('Horários salvos com sucesso!');
+      const data = await res.json();
+      
+      if (data.warning) {
+        setWarning(data.warning);
+      } else {
+        setShowSuccess(true);
+        setTimeout(() => setShowSuccess(false), 3000);
+      }
+
       setAvailableTimes([]);
+      fetchDatesWithSlots();
+      fetchExistingSlots();
     } catch (err) {
       alert('Erro ao salvar horários');
     } finally {
@@ -810,7 +867,42 @@ function ScheduleManager({ token }: { token: string }) {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 relative">
+      <AnimatePresence>
+        {showSuccess && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.9 }}
+            className="fixed top-24 left-1/2 -translate-x-1/2 z-[100] bg-green-600 text-white px-8 py-4 rounded-2xl shadow-2xl flex items-center gap-3 border border-green-500"
+          >
+            <div className="bg-white/20 p-1 rounded-full">
+              <CheckCircle size={20} />
+            </div>
+            <span className="font-bold">Horários salvos com sucesso!</span>
+          </motion.div>
+        )}
+        {warning && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.9 }}
+            className="fixed top-24 left-1/2 -translate-x-1/2 z-[100] bg-yellow-500 text-white px-8 py-4 rounded-2xl shadow-2xl flex flex-col gap-2 border border-yellow-400 max-w-md"
+          >
+            <div className="flex items-center gap-3">
+              <div className="bg-white/20 p-1 rounded-full">
+                <XCircle size={20} />
+              </div>
+              <span className="font-bold">Atenção!</span>
+              <button onClick={() => setWarning(null)} className="ml-auto hover:opacity-70">
+                <LogOut size={16} className="rotate-90" />
+              </button>
+            </div>
+            <p className="text-sm opacity-90">{warning}</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Location Selector */}
       <div className="flex flex-wrap gap-3">
         {locations.map(loc => (
@@ -845,16 +937,23 @@ function ScheduleManager({ token }: { token: string }) {
             {[...Array(12)].map((_, i) => {
               const date = addDays(startOfToday(), i);
               const isSelected = isSameDay(date, selectedDate);
+              const hasSlots = datesWithSlots.includes(format(date, 'yyyy-MM-dd'));
+              
               return (
                 <button
                   key={i}
                   onClick={() => setSelectedDate(date)}
-                  className={`p-3 rounded-xl flex flex-col items-center transition-all ${
+                  className={`p-3 rounded-xl flex flex-col items-center transition-all relative ${
                     isSelected 
                       ? 'bg-green-600 text-white shadow-lg shadow-green-200' 
-                      : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                      : hasSlots
+                        ? 'bg-green-50 text-green-700 border border-green-200'
+                        : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
                   }`}
                 >
+                  {hasSlots && !isSelected && (
+                    <div className="absolute top-1 right-1 w-1.5 h-1.5 bg-green-500 rounded-full" />
+                  )}
                   <span className="text-[10px] uppercase font-bold opacity-70">
                     {format(date, 'EEE', { locale: ptBR })}
                   </span>
@@ -873,19 +972,33 @@ function ScheduleManager({ token }: { token: string }) {
             2. Defina os Horários
           </h3>
           <div className="grid grid-cols-4 gap-2">
-            {timeSlots.map(time => (
-              <button
-                key={time}
-                onClick={() => toggleTime(time)}
-                className={`p-2 rounded-lg text-sm font-bold transition-all ${
-                  availableTimes.includes(time)
-                    ? 'bg-green-600 text-white shadow-md'
-                    : 'bg-gray-50 text-gray-500 hover:bg-gray-100'
-                }`}
-              >
-                {time}
-              </button>
-            ))}
+            {timeSlots.map(time => {
+              const existing = existingSlots.find(s => s.time === time);
+              const isSelected = availableTimes.includes(time);
+              
+              return (
+                <button
+                  key={time}
+                  onClick={() => !existing && toggleTime(time)}
+                  className={`p-2 rounded-lg text-sm font-bold transition-all flex flex-col items-center ${
+                    existing
+                      ? existing.is_available 
+                        ? 'bg-green-100 text-green-700 border border-green-300 cursor-default'
+                        : 'bg-red-50 text-red-600 border border-red-100 cursor-default'
+                      : isSelected
+                        ? 'bg-green-600 text-white shadow-md'
+                        : 'bg-gray-50 text-gray-500 hover:bg-gray-100'
+                  }`}
+                >
+                  <span>{time}</span>
+                  {existing && (
+                    <span className="text-[8px] uppercase mt-0.5">
+                      {existing.is_available ? 'Liberado' : 'Ocupado'}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
           <button 
             onClick={saveAvailability}
