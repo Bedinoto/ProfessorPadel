@@ -32,6 +32,7 @@ import {
   db, 
   googleProvider, 
   signInWithPopup, 
+  signInWithEmailAndPassword,
   signOut, 
   onAuthStateChanged, 
   collection, 
@@ -505,8 +506,31 @@ function PublicBooking() {
 }
 
 function Login({ onLogin }: { onLogin: () => void }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loginMethod, setLoginMethod] = useState<'email' | 'google'>('email');
+
+  const handleEmailLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      onLogin();
+    } catch (err: any) {
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        setError('E-mail ou senha incorretos.');
+      } else if (err.code === 'auth/invalid-email') {
+        setError('E-mail inválido.');
+      } else {
+        setError('Erro ao fazer login: ' + err.message);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleGoogleLogin = async () => {
     setLoading(true);
@@ -532,20 +556,68 @@ function Login({ onLogin }: { onLogin: () => void }) {
           <LayoutDashboard size={32} />
         </div>
         <h2 className="text-2xl font-bold">Acesso do Professor</h2>
-        <p className="text-gray-500">Entre com sua conta Google para gerenciar suas aulas.</p>
+        <p className="text-gray-500">Entre para gerenciar suas aulas.</p>
       </div>
 
-      <div className="space-y-4">
-        {error && <p className="text-red-500 text-sm font-medium text-center">{error}</p>}
+      <div className="space-y-6">
+        <div className="flex bg-gray-100 p-1 rounded-xl">
+          <button 
+            onClick={() => setLoginMethod('email')}
+            className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${loginMethod === 'email' ? 'bg-white text-green-600 shadow-sm' : 'text-gray-500'}`}
+          >
+            E-mail
+          </button>
+          <button 
+            onClick={() => setLoginMethod('google')}
+            className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${loginMethod === 'google' ? 'bg-white text-green-600 shadow-sm' : 'text-gray-500'}`}
+          >
+            Google
+          </button>
+        </div>
 
-        <button 
-          onClick={handleGoogleLogin}
-          disabled={loading}
-          className="w-full bg-white border border-gray-200 text-gray-700 py-4 rounded-xl font-bold shadow-sm hover:bg-gray-50 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
-        >
-          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
-          {loading ? 'Entrando...' : 'Entrar com Google'}
-        </button>
+        {error && <p className="text-red-500 text-sm font-medium text-center bg-red-50 p-3 rounded-xl">{error}</p>}
+
+        {loginMethod === 'email' ? (
+          <form onSubmit={handleEmailLogin} className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-gray-400 uppercase">E-mail</label>
+              <input 
+                required
+                type="email"
+                placeholder="professor@exemplo.com"
+                className="w-full px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-gray-400 uppercase">Senha</label>
+              <input 
+                required
+                type="password"
+                placeholder="••••••••"
+                className="w-full px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+              />
+            </div>
+            <button 
+              disabled={loading}
+              className="w-full bg-green-600 text-white py-4 rounded-xl font-bold shadow-lg shadow-green-200 hover:bg-green-700 transition-all disabled:opacity-50"
+            >
+              {loading ? 'Entrando...' : 'Entrar'}
+            </button>
+          </form>
+        ) : (
+          <button 
+            onClick={handleGoogleLogin}
+            disabled={loading}
+            className="w-full bg-white border border-gray-200 text-gray-700 py-4 rounded-xl font-bold shadow-sm hover:bg-gray-50 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+          >
+            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
+            {loading ? 'Entrando...' : 'Entrar com Google'}
+          </button>
+        )}
       </div>
     </motion.div>
   );
