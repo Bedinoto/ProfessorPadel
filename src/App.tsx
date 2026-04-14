@@ -117,9 +117,6 @@ export default function App() {
             className="flex items-center gap-2 cursor-pointer" 
             onClick={() => setView('public')}
           >
-            <div className="bg-green-600 p-2 rounded-lg">
-              <TrendingUp className="text-white w-5 h-5" />
-            </div>
             <h1 className="font-bold text-xl tracking-tight">🎾 Instrutor <span className="text-green-600">Rafael Vielmo</span></h1>
           </div>
           
@@ -267,6 +264,34 @@ function PublicBooking() {
       });
 
       setStatus('success');
+
+      // Send WhatsApp Notification
+      try {
+        const message = `🎾 *Nova Reserva de Aula!*
+        
+📍 *Local:* ${selectedLocation?.name}
+📅 *Data:* ${format(selectedDate, "dd/MM/yyyy")}
+⏰ *Hora:* ${selectedSlot.time}
+👤 *Aluno:* ${formData.name}
+📞 *Contato:* ${formData.phone}
+📝 *Tipo:* ${formData.type}`;
+
+        await fetch('https://bedinoto.uazapi.com/send/text', {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'token': 'a5fdab6f-0e1d-407c-aa4e-e6b44f935509'
+          },
+          body: JSON.stringify({
+            number: "555596636076",
+            text: message
+          })
+        });
+      } catch (notifyError) {
+        console.error('Erro ao enviar notificação:', notifyError);
+      }
+
       setSelectedSlot(null);
       setFormData({ name: '', phone: '', type: 'Individual' });
     } catch (err) {
