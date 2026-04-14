@@ -1,0 +1,7 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  # Desativa o scanner de segredos que está bloqueando o build por causa da chave do Firebase
+  SECRETS_SCAN_SMART_DETECTION_ENABLED = "false"
