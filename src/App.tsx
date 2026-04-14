@@ -33,6 +33,7 @@ import {
   googleProvider, 
   signInWithPopup, 
   signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
   signOut, 
   onAuthStateChanged, 
   collection, 
@@ -511,21 +512,30 @@ function Login({ onLogin }: { onLogin: () => void }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [loginMethod, setLoginMethod] = useState<'email' | 'google'>('email');
+  const [isRegistering, setIsRegistering] = useState(false);
 
-  const handleEmailLogin = async (e: React.FormEvent) => {
+  const handleEmailAction = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      if (isRegistering) {
+        await createUserWithEmailAndPassword(auth, email, password);
+      } else {
+        await signInWithEmailAndPassword(auth, email, password);
+      }
       onLogin();
     } catch (err: any) {
       if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
         setError('E-mail ou senha incorretos.');
       } else if (err.code === 'auth/invalid-email') {
         setError('E-mail inválido.');
+      } else if (err.code === 'auth/email-already-in-use') {
+        setError('Este e-mail já está em uso.');
+      } else if (err.code === 'auth/weak-password') {
+        setError('A senha deve ter pelo menos 6 caracteres.');
       } else {
-        setError('Erro ao fazer login: ' + err.message);
+        setError('Erro: ' + err.message);
       }
     } finally {
       setLoading(false);
@@ -578,7 +588,7 @@ function Login({ onLogin }: { onLogin: () => void }) {
         {error && <p className="text-red-500 text-sm font-medium text-center bg-red-50 p-3 rounded-xl">{error}</p>}
 
         {loginMethod === 'email' ? (
-          <form onSubmit={handleEmailLogin} className="space-y-4">
+          <form onSubmit={handleEmailAction} className="space-y-4">
             <div className="space-y-1">
               <label className="text-xs font-bold text-gray-400 uppercase">E-mail</label>
               <input 
@@ -605,8 +615,18 @@ function Login({ onLogin }: { onLogin: () => void }) {
               disabled={loading}
               className="w-full bg-green-600 text-white py-4 rounded-xl font-bold shadow-lg shadow-green-200 hover:bg-green-700 transition-all disabled:opacity-50"
             >
-              {loading ? 'Entrando...' : 'Entrar'}
+              {loading ? 'Processando...' : (isRegistering ? 'Criar Conta' : 'Entrar')}
             </button>
+            
+            <div className="text-center">
+              <button 
+                type="button"
+                onClick={() => setIsRegistering(!isRegistering)}
+                className="text-sm text-gray-500 hover:text-green-600 font-medium"
+              >
+                {isRegistering ? 'Já tem uma conta? Entre aqui' : 'Não tem conta? Crie uma agora'}
+              </button>
+            </div>
           </form>
         ) : (
           <button 
