@@ -882,6 +882,7 @@ function ScheduleManager({ user }: { user: any }) {
   const [selectedDate, setSelectedDate] = useState(startOfToday());
   const [availableTimes, setAvailableTimes] = useState<string[]>([]);
   const [existingSlots, setExistingSlots] = useState<any[]>([]);
+  const [allSlotsForDate, setAllSlotsForDate] = useState<Slot[]>([]);
   const [datesWithSlots, setDatesWithSlots] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -923,6 +924,18 @@ function ScheduleManager({ user }: { user: any }) {
       return () => unsubscribe();
     }
   }, [selectedDate, selectedLocation]);
+
+  useEffect(() => {
+    if (selectedDate) {
+      const dateStr = format(selectedDate, 'yyyy-MM-dd');
+      const q = query(collection(db, 'slots'), where('date', '==', dateStr));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const slots = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Slot));
+        setAllSlotsForDate(slots);
+      }, (error) => handleFirestoreError(error, OperationType.LIST, 'slots'));
+      return () => unsubscribe();
+    }
+  }, [selectedDate]);
 
   const handleSaveSlots = async () => {
     if (!selectedLocation || availableTimes.length === 0) return;
@@ -1022,29 +1035,42 @@ function ScheduleManager({ user }: { user: any }) {
               <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Selecione os horários para abrir</p>
               <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
                 {timeSlots.map(time => {
-                  const isExisting = existingSlots.some(s => s.time === time);
+                  const isExistingInThisLocation = existingSlots.some(s => s.time === time);
+                  const slotInOtherLocation = allSlotsForDate.find(s => s.time === time && s.location_id !== selectedLocation?.id);
+                  const isBusyElsewhere = !!slotInOtherLocation;
                   const isSelected = availableTimes.includes(time);
                   
                   return (
                     <button
                       key={time}
-                      disabled={isExisting}
+                      disabled={isExistingInThisLocation || isBusyElsewhere}
                       onClick={() => {
                         if (isSelected) setAvailableTimes(availableTimes.filter(t => t !== time));
                         else setAvailableTimes([...availableTimes, time]);
                       }}
+                      title={isBusyElsewhere ? `Já ocupado em: ${locations.find(l => l.id === slotInOtherLocation?.location_id)?.name}` : ''}
                       className={`p-2 rounded-lg text-xs font-bold transition-all ${
-                        isExisting 
+                        isExistingInThisLocation 
                           ? 'bg-green-50 text-green-600 border border-green-100 cursor-default' 
-                          : isSelected
-                            ? 'bg-green-600 text-white shadow-md'
-                            : 'bg-gray-50 text-gray-400 hover:bg-gray-100'
+                          : isBusyElsewhere
+                            ? 'bg-red-50 text-red-400 border border-red-100 cursor-not-allowed'
+                            : isSelected
+                              ? 'bg-green-600 text-white shadow-md'
+                              : 'bg-gray-50 text-gray-400 hover:bg-gray-100'
                       }`}
                     >
                       {time}
                     </button>
                   );
                 })}
+              </div>
+              <div className="flex gap-4 text-[10px] font-bold uppercase tracking-wider">
+                <div className="flex items-center gap-1 text-green-600">
+                  <div className="w-2 h-2 bg-green-100 border border-green-200 rounded" /> Aberto aqui
+                </div>
+                <div className="flex items-center gap-1 text-red-400">
+                  <div className="w-2 h-2 bg-red-50 border border-red-100 rounded" /> Ocupado em outro local
+                </div>
               </div>
             </div>
 
