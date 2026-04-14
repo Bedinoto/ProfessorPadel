@@ -660,7 +660,7 @@ function AdminDashboard({ user }: { user: any }) {
         setLoading(false);
       }, (error) => handleFirestoreError(error, OperationType.LIST, 'bookings'));
     } else if (tab === 'finance') {
-      const unsubscribeBookings = onSnapshot(collection(db, 'bookings'), (snapshot) => {
+      unsubscribe = onSnapshot(collection(db, 'bookings'), (snapshot) => {
         const allBookings = snapshot.docs.map(doc => doc.data() as Booking);
         const total_revenue = allBookings.reduce((acc, b) => acc + b.price, 0);
         const total_paid = allBookings.filter(b => b.paid).reduce((acc, b) => acc + b.price, 0);
@@ -673,12 +673,13 @@ function AdminDashboard({ user }: { user: any }) {
         });
         setLoading(false);
       }, (error) => handleFirestoreError(error, OperationType.LIST, 'bookings'));
-      return () => unsubscribeBookings();
     } else {
       setLoading(false);
     }
 
-    return () => unsubscribe && unsubscribe();
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, [tab]);
 
   return (
@@ -816,6 +817,57 @@ function AdminDashboard({ user }: { user: any }) {
                   )}
                 </tbody>
               </table>
+            </div>
+          </motion.div>
+        )}
+        {tab === 'finance' && finance && (
+          <motion.div 
+            key="finance"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="space-y-6"
+          >
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-1">
+                <p className="text-xs font-bold text-gray-400 uppercase">Total Bruto</p>
+                <p className="text-2xl font-bold text-gray-900">R$ {finance.total_revenue.toFixed(2)}</p>
+              </div>
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-1">
+                <p className="text-xs font-bold text-green-600 uppercase">Total Recebido</p>
+                <p className="text-2xl font-bold text-green-600">R$ {finance.total_paid.toFixed(2)}</p>
+              </div>
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-1">
+                <p className="text-xs font-bold text-yellow-600 uppercase">Total Pendente</p>
+                <p className="text-2xl font-bold text-yellow-600">R$ {finance.total_pending.toFixed(2)}</p>
+              </div>
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-1">
+                <p className="text-xs font-bold text-blue-600 uppercase">Total Reservas</p>
+                <p className="text-2xl font-bold text-blue-600">{finance.total_bookings}</p>
+              </div>
+            </div>
+
+            <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 space-y-6">
+              <h3 className="font-bold text-xl flex items-center gap-2">
+                <TrendingUp size={24} className="text-green-600" />
+                Desempenho Financeiro
+              </h3>
+              <div className="h-64 flex items-end gap-4 pt-8">
+                <div className="flex-1 flex flex-col items-center gap-2 h-full justify-end">
+                  <div 
+                    className="w-full bg-green-100 rounded-t-xl transition-all duration-1000" 
+                    style={{ height: `${(finance.total_paid / finance.total_revenue) * 100 || 0}%` }}
+                  />
+                  <span className="text-[10px] font-bold text-gray-400 uppercase">Pago</span>
+                </div>
+                <div className="flex-1 flex flex-col items-center gap-2 h-full justify-end">
+                  <div 
+                    className="w-full bg-yellow-100 rounded-t-xl transition-all duration-1000" 
+                    style={{ height: `${(finance.total_pending / finance.total_revenue) * 100 || 0}%` }}
+                  />
+                  <span className="text-[10px] font-bold text-gray-400 uppercase">Pendente</span>
+                </div>
+              </div>
             </div>
           </motion.div>
         )}
