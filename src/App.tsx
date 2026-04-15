@@ -284,12 +284,35 @@ function PublicBooking() {
             'token': 'a5fdab6f-0e1d-407c-aa4e-e6b44f935509'
           },
           body: JSON.stringify({
-            number: "555599731123",
+            number: "5596636076",
             text: message
           })
         });
       } catch (notifyError) {
-        console.error('Erro ao enviar notificação:', notifyError);
+        console.error('Erro ao enviar notificação WhatsApp:', notifyError);
+      }
+
+      // Create Google Calendar Event
+      try {
+        const dateStr = format(selectedDate, 'yyyy-MM-dd');
+        const startDateTime = `${dateStr}T${selectedSlot.time}:00`;
+        const endDate = new Date(`${dateStr}T${selectedSlot.time}:00`);
+        endDate.setHours(endDate.getHours() + 1);
+        const endDateTime = endDate.toISOString().split('.')[0];
+
+        await fetch('/api/calendar/create-event', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            summary: `Aula: ${formData.name} (${formData.type})`,
+            description: `Aluno: ${formData.name}\nTelefone: ${formData.phone}\nTipo: ${formData.type}`,
+            location: selectedLocation?.name || '',
+            startDateTime,
+            endDateTime
+          })
+        });
+      } catch (calendarError) {
+        console.error('Erro ao criar evento no Google Calendar:', calendarError);
       }
 
       setSelectedSlot(null);
@@ -673,6 +696,34 @@ function AdminDashboard({ user }: { user: any }) {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [finance, setFinance] = useState<FinanceSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isCalendarConnected, setIsCalendarConnected] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(doc(db, 'settings', 'google_calendar'), (doc) => {
+      setIsCalendarConnected(doc.exists() && !!doc.data()?.refresh_token);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'GOOGLE_AUTH_SUCCESS') {
+        setIsCalendarConnected(true);
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  const handleConnectCalendar = async () => {
+    try {
+      const response = await fetch('/api/auth/google/url');
+      const { url } = await response.json();
+      window.open(url, 'google_auth', 'width=600,height=700');
+    } catch (error) {
+      console.error('Erro ao conectar Google Calendar:', error);
+    }
+  };
 
   useEffect(() => {
     let unsubscribe: () => void;
@@ -710,9 +761,22 @@ function AdminDashboard({ user }: { user: any }) {
   return (
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">Painel de Controle</h2>
-          <p className="text-gray-500">Gerencie seus horários, alunos e finanças.</p>
+        <div className="flex items-center gap-4">
+          <div>
+            <h2 className="text-3xl font-bold tracking-tight">Painel de Controle</h2>
+            <p className="text-gray-500">Gerencie seus horários, alunos e finanças.</p>
+          </div>
+          <button
+            onClick={handleConnectCalendar}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+              isCalendarConnected 
+                ? 'bg-green-50 text-green-600 border border-green-100' 
+                : 'bg-blue-600 text-white shadow-lg shadow-blue-200 hover:bg-blue-700'
+            }`}
+          >
+            <CalendarIcon size={16} />
+            {isCalendarConnected ? 'Agenda Conectada' : 'Conectar Google Agenda'}
+          </button>
         </div>
         
         <div className="flex flex-wrap bg-white p-1 rounded-xl border border-gray-200 shadow-sm">
