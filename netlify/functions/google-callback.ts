@@ -13,10 +13,15 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
+const getRedirectUri = () => {
+  const baseUrl = (process.env.APP_URL || "").replace(/\/$/, "");
+  return `${baseUrl}/.netlify/functions/google-callback`;
+};
+
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET,
-  `${process.env.APP_URL}/.netlify/functions/google-callback`
+  getRedirectUri()
 );
 
 export const handler: Handler = async (event) => {
