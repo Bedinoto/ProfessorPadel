@@ -16,13 +16,15 @@ import {
   LogOut, 
   Plus, 
   Trash2, 
+  Pencil,
   DollarSign,
   ChevronLeft,
   ChevronRight,
   Loader2,
   Users,
   TrendingUp,
-  MapPin
+  MapPin,
+  Settings
 } from 'lucide-react';
 import { format, addDays, startOfToday, isSameDay, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -79,6 +81,13 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   console.error('Firestore Error: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
 }
+
+const BOOKING_TYPES = [
+  { name: 'Individual', price: 70 },
+  { name: 'Dupla', price: 120 },
+  { name: 'Trio', price: 150 },
+  { name: 'Quarteto (jogo orientado)', price: 200 },
+];
 
 export default function App() {
   const [view, setView] = useState<'public' | 'login' | 'admin'>('public');
@@ -184,13 +193,6 @@ function PublicBooking() {
   const [formData, setFormData] = useState({ name: '', phone: '', type: 'Individual' });
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
 
-  const bookingTypes = [
-    { name: 'Individual', price: 70 },
-    { name: 'Dupla', price: 120 },
-    { name: 'Trio', price: 150 },
-    { name: 'Quarteto (jogo orientado)', price: 200 },
-  ];
-
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'locations'), (snapshot) => {
       const locs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Location));
@@ -242,7 +244,7 @@ function PublicBooking() {
     
     setStatus('loading');
     try {
-      const selectedType = bookingTypes.find(t => t.name === formData.type);
+      const selectedType = BOOKING_TYPES.find(t => t.name === formData.type);
 
       // Update slot availability
       await updateDoc(doc(db, 'slots', selectedSlot.id), {
@@ -260,7 +262,8 @@ function PublicBooking() {
         paid: false,
         date: format(selectedDate, 'yyyy-MM-dd'),
         time: selectedSlot.time,
-        location_name: selectedLocation?.name || ''
+        location_name: selectedLocation?.name || '',
+        location_id: selectedLocation?.id || ''
       });
 
       setStatus('success');
@@ -500,7 +503,7 @@ function PublicBooking() {
             <div className="space-y-1">
               <label className="text-xs font-bold text-gray-400 uppercase">Tipo de Aula</label>
               <div className="grid grid-cols-1 gap-2">
-                {bookingTypes.map((type) => (
+                {BOOKING_TYPES.map((type) => (
                   <button
                     key={type.name}
                     type="button"
@@ -691,9 +694,197 @@ function Login({ onLogin }: { onLogin: () => void }) {
   );
 }
 
+function BookingEditModal({ booking, onClose }: { booking: Booking, onClose: () => void }) {
+  const [name, setName] = useState(booking.student_name);
+  const [phone, setPhone] = useState(booking.student_phone);
+  const [type, setType] = useState(booking.booking_type);
+  const [price, setPrice] = useState(booking.price);
+  const [paid, setPaid] = useState(booking.paid);
+  const [date, setDate] = useState(parseISO(booking.date));
+  const [time, setTime] = useState(booking.time);
+  const [locationId, setLocationId] = useState(booking.location_id || "");
+  const [locationName, setLocationName] = useState(booking.location_name);
+  
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [availableSlots, setAvailableSlots] = useState<Slot[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'locations'), (snapshot) => {
+      setLocations(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Location)));
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (locationId && date) {
+      const dateStr = format(date, 'yyyy-MM-dd');
+      const q = query(
+        collection(db, 'slots'), 
+        where('location_id', '==', locationId), 
+        where('date', '==', dateStr)
+      );
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const slots = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Slot));
+        // Incluir o slot atual mesmo se não estiver disponível
+        setAvailableSlots(slots.filter(s => s.is_available || s.id === booking.slot_id).sort((a, b) => a.time.localeCompare(b.time)));
+      });
+      return () => unsubscribe();
+    }
+  }, [locationId, date, booking.slot_id]);
+
+  const handleUpdate = async () => {
+    setLoading(true);
+    try {
+      const selectedType = BOOKING_TYPES.find(t => t.name === type);
+      const newPrice = selectedType?.price || price;
+      const dateStr = format(date, 'yyyy-MM-dd');
+      
+      const newSlot = availableSlots.find(s => s.time === time);
+      if (!newSlot) throw new Error("Horário não encontrado");
+
+      // Se o slot mudou
+      if (newSlot.id !== booking.slot_id) {
+        // Liberar slot antigo
+        await updateDoc(doc(db, 'slots', booking.slot_id), { is_available: true });
+        // Reservar novo slot
+        await updateDoc(doc(db, 'slots', newSlot.id), { is_available: false });
+      }
+
+      await updateDoc(doc(db, 'bookings', booking.id), {
+        student_name: name,
+        student_phone: phone,
+        booking_type: type,
+        price: newPrice,
+        paid,
+        date: dateStr,
+        time,
+        location_id: locationId,
+        location_name: locationName,
+        slot_id: newSlot.id
+      });
+
+      onClose();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'bookings');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="bg-white rounded-3xl p-8 max-w-lg w-full shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto"
+      >
+        <div className="flex justify-between items-center">
+          <h2 className="text-2xl font-bold">Editar Agendamento</h2>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+            <XCircle size={24} className="text-gray-400" />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-gray-400 uppercase">Nome do Aluno</label>
+              <input 
+                value={name}
+                onChange={e => setName(e.target.value)}
+                className="w-full px-4 py-3 bg-gray-50 rounded-xl outline-none focus:ring-2 focus:ring-green-500"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-gray-400 uppercase">Telefone</label>
+              <input 
+                value={phone}
+                onChange={e => setPhone(e.target.value)}
+                className="w-full px-4 py-3 bg-gray-50 rounded-xl outline-none focus:ring-2 focus:ring-green-500"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-gray-400 uppercase">Tipo de Aula</label>
+              <select 
+                value={type}
+                onChange={e => setType(e.target.value)}
+                className="w-full px-4 py-3 bg-gray-50 rounded-xl outline-none focus:ring-2 focus:ring-green-500"
+              >
+                {BOOKING_TYPES.map(t => <option key={t.name} value={t.name}>{t.name}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-gray-400 uppercase">Status</label>
+              <select 
+                value={paid ? 'true' : 'false'}
+                onChange={e => setPaid(e.target.value === 'true')}
+                className="w-full px-4 py-3 bg-gray-50 rounded-xl outline-none focus:ring-2 focus:ring-green-500"
+              >
+                <option value="false">Pendente</option>
+                <option value="true">Pago</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-gray-400 uppercase">Local</label>
+            <select 
+              value={locationId}
+              onChange={e => {
+                const loc = locations.find(l => l.id === e.target.value);
+                setLocationId(e.target.value);
+                if (loc) setLocationName(loc.name);
+              }}
+              className="w-full px-4 py-3 bg-gray-50 rounded-xl outline-none focus:ring-2 focus:ring-green-500"
+            >
+              <option value="">Selecione um local</option>
+              {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-gray-400 uppercase">Data</label>
+              <input 
+                type="date"
+                value={format(date, 'yyyy-MM-dd')}
+                onChange={e => setDate(parseISO(e.target.value))}
+                className="w-full px-4 py-3 bg-gray-50 rounded-xl outline-none focus:ring-2 focus:ring-green-500"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-gray-400 uppercase">Horário</label>
+              <select 
+                value={time}
+                onChange={e => setTime(e.target.value)}
+                className="w-full px-4 py-3 bg-gray-50 rounded-xl outline-none focus:ring-2 focus:ring-green-500"
+              >
+                {availableSlots.map(s => <option key={s.id} value={s.time}>{s.time}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <button 
+          onClick={handleUpdate}
+          disabled={loading}
+          className="w-full bg-green-600 text-white py-4 rounded-xl font-bold shadow-lg shadow-green-200 hover:bg-green-700 transition-all disabled:opacity-50"
+        >
+          {loading ? 'Salvando...' : 'Salvar Alterações'}
+        </button>
+      </motion.div>
+    </div>
+  );
+}
+
 function AdminDashboard({ user }: { user: any }) {
-  const [tab, setTab] = useState<'schedule' | 'bookings' | 'finance' | 'locations'>('schedule');
+  const [tab, setTab] = useState<'schedule' | 'bookings' | 'finance' | 'locations' | 'settings'>('schedule');
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
   const [finance, setFinance] = useState<FinanceSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [isCalendarConnected, setIsCalendarConnected] = useState(false);
@@ -804,6 +995,12 @@ function AdminDashboard({ user }: { user: any }) {
           >
             Financeiro
           </button>
+          <button 
+            onClick={() => setTab('settings')}
+            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${tab === 'settings' ? 'bg-green-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            Configurações
+          </button>
         </div>
       </div>
 
@@ -865,6 +1062,13 @@ function AdminDashboard({ user }: { user: any }) {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex gap-2">
+                          <button 
+                            onClick={() => setEditingBooking(booking)}
+                            className="p-2 text-gray-400 hover:text-blue-600 transition-colors"
+                            title="Editar Agendamento"
+                          >
+                            <Pencil size={18} />
+                          </button>
                           <button 
                             onClick={async () => {
                               try {
@@ -960,7 +1164,89 @@ function AdminDashboard({ user }: { user: any }) {
             </div>
           </motion.div>
         )}
+        {tab === 'settings' && (
+          <motion.div 
+            key="settings"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="space-y-6"
+          >
+            <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 space-y-6">
+              <h3 className="font-bold text-xl flex items-center gap-2 text-red-600">
+                <Settings size={24} />
+                Zona de Perigo
+              </h3>
+              <p className="text-gray-500 text-sm">
+                Ações irreversíveis para o seu banco de dados. Use com cuidado.
+              </p>
+              
+              <div className="p-6 border border-red-100 rounded-2xl bg-red-50 space-y-4">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h4 className="font-bold text-red-600">Limpar Todos os Agendamentos</h4>
+                    <p className="text-xs text-red-400">Remove permanentemente todos os registros de alunos e libera os horários.</p>
+                  </div>
+                  <button 
+                    onClick={async () => {
+                      if (confirm('ATENÇÃO: Isso apagará TODOS os agendamentos de alunos. Esta ação é irreversível. Deseja continuar?')) {
+                        try {
+                          const snapshot = await getDocs(collection(db, 'bookings'));
+                          const batch_promises = snapshot.docs.map(async (bookingDoc) => {
+                            const data = bookingDoc.data();
+                            if (data.slot_id) {
+                              await updateDoc(doc(db, 'slots', data.slot_id), { is_available: true });
+                            }
+                            await deleteDoc(doc(db, 'bookings', bookingDoc.id));
+                          });
+                          await Promise.all(batch_promises);
+                          alert('Todos os agendamentos foram removidos com sucesso!');
+                        } catch (error) {
+                          handleFirestoreError(error, OperationType.DELETE, 'bookings');
+                        }
+                      }
+                    }}
+                    className="px-4 py-2 bg-red-600 text-white rounded-xl text-xs font-bold hover:bg-red-700 transition-all shadow-md"
+                  >
+                    Limpar Agendamentos
+                  </button>
+                </div>
+
+                <div className="border-t border-red-100 pt-4 flex justify-between items-center">
+                  <div>
+                    <h4 className="font-bold text-red-600">Limpar Todos os Horários</h4>
+                    <p className="text-xs text-red-400">Remove todos os horários criados na agenda (slots).</p>
+                  </div>
+                  <button 
+                    onClick={async () => {
+                      if (confirm('ATENÇÃO: Isso apagará TODOS os horários da sua agenda. Deseja continuar?')) {
+                        try {
+                          const snapshot = await getDocs(collection(db, 'slots'));
+                          const batch_promises = snapshot.docs.map(slotDoc => deleteDoc(doc(db, 'slots', slotDoc.id)));
+                          await Promise.all(batch_promises);
+                          alert('Todos os horários foram removidos com sucesso!');
+                        } catch (error) {
+                          handleFirestoreError(error, OperationType.DELETE, 'slots');
+                        }
+                      }
+                    }}
+                    className="px-4 py-2 bg-red-600 text-white rounded-xl text-xs font-bold hover:bg-red-700 transition-all shadow-md"
+                  >
+                    Limpar Agenda
+                  </button>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
       </AnimatePresence>
+
+      {editingBooking && (
+        <BookingEditModal 
+          booking={editingBooking} 
+          onClose={() => setEditingBooking(null)} 
+        />
+      )}
     </div>
   );
 }

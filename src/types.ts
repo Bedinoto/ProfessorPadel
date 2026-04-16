@@ -22,6 +22,7 @@ export interface Booking {
   date: string;
   time: string;
   location_name: string;
+  location_id: string;
 }
 
 export interface FinanceSummary {

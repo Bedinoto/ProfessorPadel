@@ -4,31 +4,9 @@ import cors from "cors";
 import fs from "fs";
 import { google } from "googleapis";
 import admin from "firebase-admin";
-import { getFirestore } from "firebase-admin/firestore";
+import { initializeApp as initializeClientApp } from 'firebase/app';
+import { getFirestore as getClientFirestore, doc as clientDoc, getDoc as getClientDoc, setDoc as clientSetDoc, collection as clientCollection, serverTimestamp } from 'firebase/firestore';
 import firebaseConfig from "./firebase-applet-config.json";
-
-// Initialize Firebase Admin
-if (!admin.apps.length) {
-  try {
-    admin.initializeApp({
-      projectId: firebaseConfig.projectId,
-    });
-  } catch (e) {
-    console.error("Firebase Admin initialization failed:", e);
-  }
-}
-
-const db = getFirestore(firebaseConfig.firestoreDatabaseId);
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-// --- GOOGLE OAUTH CONFIG ---
-const oauth2Client = new google.auth.OAuth2(
-  process.env.GOOGLE_CLIENT_ID,
-  process.env.GOOGLE_CLIENT_SECRET,
-  `${process.env.APP_URL || 'http://localhost:3000'}/api/auth/google/callback`
-);
 
 // --- VERBOSE LOGGING SYSTEM ---
 const logFile = path.resolve(process.cwd(), "hostinger_debug.log");
@@ -45,6 +23,33 @@ function debugLog(msg: string) {
 }
 
 debugLog("--- APPLICATION STARTING ---");
+
+// Initialize Firebase Admin (still needed for some admin tasks if any)
+if (!admin.apps.length) {
+  try {
+    admin.initializeApp({
+      projectId: firebaseConfig.projectId,
+    });
+    debugLog(`Firebase Admin initialized for project: ${firebaseConfig.projectId}`);
+  } catch (e: any) {
+    debugLog(`Firebase Admin initialization failed: ${e.message}`);
+  }
+}
+
+// Use Client SDK for Firestore on the server
+const clientApp = initializeClientApp(firebaseConfig);
+const db = getClientFirestore(clientApp, firebaseConfig.firestoreDatabaseId);
+debugLog(`Client Firestore instance created for database: ${firebaseConfig.firestoreDatabaseId}`);
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// --- GOOGLE OAUTH CONFIG ---
+const oauth2Client = new google.auth.OAuth2(
+  process.env.GOOGLE_CLIENT_ID,
+  process.env.GOOGLE_CLIENT_SECRET,
+  `${process.env.APP_URL || 'http://localhost:3000'}/api/auth/google/callback`
+);
 
 app.use(cors());
 app.use(express.json());
@@ -74,14 +79,13 @@ app.get("/api/auth/google/callback", async (req, res) => {
   try {
     const { tokens } = await oauth2Client.getToken(code as string);
     
-    // Store the refresh_token in Firestore
-    // We'll store it in a global settings doc for simplicity, 
-    // or we could link it to a specific user UID if passed in state
+    // Store the refresh_token in Firestore using Client SDK
     if (tokens.refresh_token) {
-      await db.collection('settings').doc('google_calendar').set({
+      const docRef = clientDoc(db, 'settings', 'google_calendar');
+      await clientSetDoc(docRef, {
         refresh_token: tokens.refresh_token,
-        admin_email: "uillian.bedinoto@gmail.com", // Added for security rules validation
-        updated_at: admin.firestore.FieldValue.serverTimestamp()
+        admin_email: "uillian.bedinoto@gmail.com",
+        updated_at: serverTimestamp()
       }, { merge: true });
     }
 
@@ -111,8 +115,10 @@ app.post("/api/calendar/create-event", async (req, res) => {
   const { summary, description, startDateTime, endDateTime, location } = req.body;
 
   try {
-    const settingsDoc = await db.collection('settings').doc('google_calendar').get();
-    if (!settingsDoc.exists || !settingsDoc.data()?.refresh_token) {
+    const docRef = clientDoc(db, 'settings', 'google_calendar');
+    const settingsDoc = await getClientDoc(docRef);
+    
+    if (!settingsDoc.exists() || !settingsDoc.data()?.refresh_token) {
       return res.status(400).json({ error: "Google Calendar não está conectado." });
     }
 
@@ -145,20 +151,6 @@ app.post("/api/calendar/create-event", async (req, res) => {
     debugLog(`Calendar Event Error: ${error.message}`);
     res.status(500).json({ error: error.message });
   }
-});
-
-// --- TEST ROUTES ---
-app.get("/ping", (req, res) => {
-  res.status(200).send("pong");
-});
-
-app.get("/debug-info", (req, res) => {
-  const info = {
-    cwd: process.cwd(),
-    env: process.env,
-    files: fs.readdirSync(process.cwd())
-  };
-  res.json(info);
 });
 
 // --- FRONTEND SERVING ---
