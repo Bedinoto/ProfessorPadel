@@ -707,6 +707,7 @@ function BookingEditModal({ booking, onClose }: { booking: Booking, onClose: () 
   
   const [locations, setLocations] = useState<Location[]>([]);
   const [availableSlots, setAvailableSlots] = useState<Slot[]>([]);
+  const [datesWithSlots, setDatesWithSlots] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -715,6 +716,19 @@ function BookingEditModal({ booking, onClose }: { booking: Booking, onClose: () 
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (locationId) {
+      const q = query(collection(db, 'slots'), where('location_id', '==', locationId));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const slots = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Slot));
+        // Pegar datas que tem slots disponíveis OU que é a data atual do agendamento
+        const dates = [...new Set(slots.filter(s => s.is_available || s.date === booking.date).map(s => s.date))];
+        setDatesWithSlots(dates.sort());
+      });
+      return () => unsubscribe();
+    }
+  }, [locationId, booking.date]);
 
   useEffect(() => {
     if (locationId && date) {
@@ -849,12 +863,17 @@ function BookingEditModal({ booking, onClose }: { booking: Booking, onClose: () 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1">
               <label className="text-xs font-bold text-gray-400 uppercase">Data</label>
-              <input 
-                type="date"
+              <select 
                 value={format(date, 'yyyy-MM-dd')}
                 onChange={e => setDate(parseISO(e.target.value))}
                 className="w-full px-4 py-3 bg-gray-50 rounded-xl outline-none focus:ring-2 focus:ring-green-500"
-              />
+              >
+                {datesWithSlots.map(d => (
+                  <option key={d} value={d}>
+                    {format(parseISO(d), "dd/MM/yyyy")}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="space-y-1">
               <label className="text-xs font-bold text-gray-400 uppercase">Horário</label>
