@@ -3,6 +3,7 @@ import path from "path";
 import cors from "cors";
 import fs from "fs";
 import { google } from "googleapis";
+import { createServer as createViteServer } from "vite";
 import admin from "firebase-admin";
 import { initializeApp as initializeClientApp } from 'firebase/app';
 import { getFirestore as getClientFirestore, doc as clientDoc, getDoc as getClientDoc, setDoc as clientSetDoc, collection as clientCollection, serverTimestamp } from 'firebase/firestore';
@@ -41,6 +42,7 @@ const clientApp = initializeClientApp(firebaseConfig);
 const db = getClientFirestore(clientApp, firebaseConfig.firestoreDatabaseId);
 debugLog(`Client Firestore instance created for database: ${firebaseConfig.firestoreDatabaseId}`);
 
+async function startServer() {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -154,40 +156,49 @@ app.post("/api/calendar/create-event", async (req, res) => {
 });
 
 // --- FRONTEND SERVING ---
-const distPath = path.resolve(process.cwd(), "dist");
-debugLog(`Checking dist path: ${distPath}`);
-
-if (fs.existsSync(distPath)) {
-  debugLog("Dist directory found.");
-  app.use(express.static(distPath));
+if (process.env.NODE_ENV !== "production") {
+  const vite = await createViteServer({
+    server: { middlewareMode: true },
+    appType: "spa",
+  });
+  app.use(vite.middlewares);
+  debugLog("Vite middleware loaded for development.");
 } else {
-  debugLog("WARNING: Dist directory NOT found!");
-}
+  const distPath = path.resolve(process.cwd(), "dist");
+  debugLog(`Checking dist path: ${distPath}`);
 
-app.get("*", (req, res, next) => {
-  if (req.path.startsWith('/api/')) return next();
-  
-  const indexPath = path.join(distPath, "index.html");
-  if (fs.existsSync(indexPath)) {
-    res.sendFile(indexPath);
+  if (fs.existsSync(distPath)) {
+    debugLog("Dist directory found.");
+    app.use(express.static(distPath));
   } else {
-    res.status(200).send(`
-      <html>
-        <body style="font-family: sans-serif; padding: 2rem;">
-          <h1 style="color: #16a34a;">✅ Servidor Node.js está Online</h1>
-          <p>O servidor iniciou com sucesso, mas não encontrou os arquivos do site (pasta dist).</p>
-          <hr>
-          <ul>
-            <li><b>Porta:</b> ${PORT}</li>
-            <li><b>Caminho:</b> ${process.cwd()}</li>
-            <li><b>Arquivos na raiz:</b> ${fs.readdirSync(process.cwd()).join(", ")}</li>
-          </ul>
-          <p>Verifique se você executou o <b>npm run build</b> antes de subir os arquivos.</p>
-        </body>
-      </html>
-    `);
+    debugLog("WARNING: Dist directory NOT found!");
   }
-});
+
+  app.get("*", (req, res, next) => {
+    if (req.path.startsWith('/api/')) return next();
+    
+    const indexPath = path.join(distPath, "index.html");
+    if (fs.existsSync(indexPath)) {
+      res.sendFile(indexPath);
+    } else {
+      res.status(200).send(`
+        <html>
+          <body style="font-family: sans-serif; padding: 2rem;">
+            <h1 style="color: #16a34a;">✅ Servidor Node.js está Online</h1>
+            <p>O servidor iniciou com sucesso, mas não encontrou os arquivos do site (pasta dist).</p>
+            <hr>
+            <ul>
+              <li><b>Porta:</b> ${PORT}</li>
+              <li><b>Caminho:</b> ${process.cwd()}</li>
+              <li><b>Arquivos na raiz:</b> ${fs.readdirSync(process.cwd()).join(", ")}</li>
+            </ul>
+            <p>Verifique se você executou o <b>npm run build</b> antes de subir os arquivos.</p>
+          </body>
+        </html>
+      `);
+    }
+  });
+}
 
 // --- SERVER LISTEN ---
 try {
@@ -197,6 +208,9 @@ try {
 } catch (error: any) {
   debugLog(`CRITICAL ERROR during app.listen: ${error.message}`);
 }
+}
+
+startServer();
 
 // Catch-all for unhandled errors
 process.on('uncaughtException', (err) => {

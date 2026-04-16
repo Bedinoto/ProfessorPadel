@@ -5,3 +5,18 @@
 [build.environment]
   # Desativa o scanner de segredos que está bloqueando o build por causa da chave do Firebase
   SECRETS_SCAN_SMART_DETECTION_ENABLED = "false"
+
+[[redirects]]
+  from = "/api/auth/google/url"
+  to = "/.netlify/functions/google-auth-url"
+  status = 200
+
+[[redirects]]
+  from = "/api/auth/google/callback"
+  to = "/.netlify/functions/google-callback"
+  status = 200
+
+[[redirects]]
+  from = "/api/calendar/create-event"
+  to = "/.netlify/functions/create-event"
+  status = 200
