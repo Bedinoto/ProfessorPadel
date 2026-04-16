@@ -22,7 +22,6 @@ export interface Booking {
   date: string;
   time: string;
   location_name: string;
-  location_id: string;
 }
 
 export interface FinanceSummary {
@@ -30,4 +29,9 @@ export interface FinanceSummary {
   total_paid: number;
   total_pending: number;
   total_bookings: number;
+}
+
+export interface AppSettings {
+  id: string;
+  whatsapp_number: string;
 }

@@ -16,7 +16,6 @@ import {
   LogOut, 
   Plus, 
   Trash2, 
-  Pencil,
   DollarSign,
   ChevronLeft,
   ChevronRight,
@@ -24,11 +23,12 @@ import {
   Users,
   TrendingUp,
   MapPin,
-  Settings
+  Settings as SettingsIcon,
+  Edit2
 } from 'lucide-react';
 import { format, addDays, startOfToday, isSameDay, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Slot, Booking, FinanceSummary, Location } from './types';
+import { Slot, Booking, FinanceSummary, Location, AppSettings } from './types';
 import { 
   auth, 
   db, 
@@ -192,13 +192,25 @@ function PublicBooking() {
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
   const [formData, setFormData] = useState({ name: '', phone: '', type: 'Individual' });
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'locations'), (snapshot) => {
       const locs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Location));
       setLocations(locs);
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'locations'));
-    return () => unsubscribe();
+
+    // Fetch app settings
+    const settingsUnsubscribe = onSnapshot(doc(db, 'settings', 'general'), (snapshot) => {
+      if (snapshot.exists()) {
+        setAppSettings({ id: snapshot.id, ...snapshot.data() } as AppSettings);
+      }
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'settings'));
+
+    return () => {
+      unsubscribe();
+      settingsUnsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -262,8 +274,7 @@ function PublicBooking() {
         paid: false,
         date: format(selectedDate, 'yyyy-MM-dd'),
         time: selectedSlot.time,
-        location_name: selectedLocation?.name || '',
-        location_id: selectedLocation?.id || ''
+        location_name: selectedLocation?.name || ''
       });
 
       setStatus('success');
@@ -287,35 +298,12 @@ function PublicBooking() {
             'token': 'a5fdab6f-0e1d-407c-aa4e-e6b44f935509'
           },
           body: JSON.stringify({
-            number: "5596636076",
+            number: appSettings?.whatsapp_number || "555599731123",
             text: message
           })
         });
       } catch (notifyError) {
-        console.error('Erro ao enviar notificação WhatsApp:', notifyError);
-      }
-
-      // Create Google Calendar Event
-      try {
-        const dateStr = format(selectedDate, 'yyyy-MM-dd');
-        const startDateTime = `${dateStr}T${selectedSlot.time}:00`;
-        const endDate = new Date(`${dateStr}T${selectedSlot.time}:00`);
-        endDate.setHours(endDate.getHours() + 1);
-        const endDateTime = endDate.toISOString().split('.')[0];
-
-        await fetch('/api/calendar/create-event', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            summary: `Aula: ${formData.name} (${formData.type})`,
-            description: `Aluno: ${formData.name}\nTelefone: ${formData.phone}\nTipo: ${formData.type}`,
-            location: selectedLocation?.name || '',
-            startDateTime,
-            endDateTime
-          })
-        });
-      } catch (calendarError) {
-        console.error('Erro ao criar evento no Google Calendar:', calendarError);
+        console.error('Erro ao enviar notificação:', notifyError);
       }
 
       setSelectedSlot(null);
@@ -694,246 +682,12 @@ function Login({ onLogin }: { onLogin: () => void }) {
   );
 }
 
-function BookingEditModal({ booking, onClose }: { booking: Booking, onClose: () => void }) {
-  const [name, setName] = useState(booking.student_name);
-  const [phone, setPhone] = useState(booking.student_phone);
-  const [type, setType] = useState(booking.booking_type);
-  const [price, setPrice] = useState(booking.price);
-  const [paid, setPaid] = useState(booking.paid);
-  const [date, setDate] = useState(parseISO(booking.date));
-  const [time, setTime] = useState(booking.time);
-  const [locationId, setLocationId] = useState(booking.location_id || "");
-  const [locationName, setLocationName] = useState(booking.location_name);
-  
-  const [locations, setLocations] = useState<Location[]>([]);
-  const [availableSlots, setAvailableSlots] = useState<Slot[]>([]);
-  const [datesWithSlots, setDatesWithSlots] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'locations'), (snapshot) => {
-      setLocations(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Location)));
-    });
-    return () => unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    if (locationId) {
-      const q = query(collection(db, 'slots'), where('location_id', '==', locationId));
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        const slots = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Slot));
-        // Pegar datas que tem slots disponíveis OU que é a data atual do agendamento
-        const dates = [...new Set(slots.filter(s => s.is_available || s.date === booking.date).map(s => s.date))];
-        setDatesWithSlots(dates.sort());
-      });
-      return () => unsubscribe();
-    }
-  }, [locationId, booking.date]);
-
-  useEffect(() => {
-    if (locationId && date) {
-      const dateStr = format(date, 'yyyy-MM-dd');
-      const q = query(
-        collection(db, 'slots'), 
-        where('location_id', '==', locationId), 
-        where('date', '==', dateStr)
-      );
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        const slots = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Slot));
-        // Incluir o slot atual mesmo se não estiver disponível
-        setAvailableSlots(slots.filter(s => s.is_available || s.id === booking.slot_id).sort((a, b) => a.time.localeCompare(b.time)));
-      });
-      return () => unsubscribe();
-    }
-  }, [locationId, date, booking.slot_id]);
-
-  const handleUpdate = async () => {
-    setLoading(true);
-    try {
-      const selectedType = BOOKING_TYPES.find(t => t.name === type);
-      const newPrice = selectedType?.price || price;
-      const dateStr = format(date, 'yyyy-MM-dd');
-      
-      const newSlot = availableSlots.find(s => s.time === time);
-      if (!newSlot) throw new Error("Horário não encontrado");
-
-      // Se o slot mudou
-      if (newSlot.id !== booking.slot_id) {
-        // Liberar slot antigo
-        await updateDoc(doc(db, 'slots', booking.slot_id), { is_available: true });
-        // Reservar novo slot
-        await updateDoc(doc(db, 'slots', newSlot.id), { is_available: false });
-      }
-
-      await updateDoc(doc(db, 'bookings', booking.id), {
-        student_name: name,
-        student_phone: phone,
-        booking_type: type,
-        price: newPrice,
-        paid,
-        date: dateStr,
-        time,
-        location_id: locationId,
-        location_name: locationName,
-        slot_id: newSlot.id
-      });
-
-      onClose();
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, 'bookings');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="bg-white rounded-3xl p-8 max-w-lg w-full shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto"
-      >
-        <div className="flex justify-between items-center">
-          <h2 className="text-2xl font-bold">Editar Agendamento</h2>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
-            <XCircle size={24} className="text-gray-400" />
-          </button>
-        </div>
-
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-gray-400 uppercase">Nome do Aluno</label>
-              <input 
-                value={name}
-                onChange={e => setName(e.target.value)}
-                className="w-full px-4 py-3 bg-gray-50 rounded-xl outline-none focus:ring-2 focus:ring-green-500"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-gray-400 uppercase">Telefone</label>
-              <input 
-                value={phone}
-                onChange={e => setPhone(e.target.value)}
-                className="w-full px-4 py-3 bg-gray-50 rounded-xl outline-none focus:ring-2 focus:ring-green-500"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-gray-400 uppercase">Tipo de Aula</label>
-              <select 
-                value={type}
-                onChange={e => setType(e.target.value)}
-                className="w-full px-4 py-3 bg-gray-50 rounded-xl outline-none focus:ring-2 focus:ring-green-500"
-              >
-                {BOOKING_TYPES.map(t => <option key={t.name} value={t.name}>{t.name}</option>)}
-              </select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-gray-400 uppercase">Status</label>
-              <select 
-                value={paid ? 'true' : 'false'}
-                onChange={e => setPaid(e.target.value === 'true')}
-                className="w-full px-4 py-3 bg-gray-50 rounded-xl outline-none focus:ring-2 focus:ring-green-500"
-              >
-                <option value="false">Pendente</option>
-                <option value="true">Pago</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-xs font-bold text-gray-400 uppercase">Local</label>
-            <select 
-              value={locationId}
-              onChange={e => {
-                const loc = locations.find(l => l.id === e.target.value);
-                setLocationId(e.target.value);
-                if (loc) setLocationName(loc.name);
-              }}
-              className="w-full px-4 py-3 bg-gray-50 rounded-xl outline-none focus:ring-2 focus:ring-green-500"
-            >
-              <option value="">Selecione um local</option>
-              {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-gray-400 uppercase">Data</label>
-              <select 
-                value={format(date, 'yyyy-MM-dd')}
-                onChange={e => setDate(parseISO(e.target.value))}
-                className="w-full px-4 py-3 bg-gray-50 rounded-xl outline-none focus:ring-2 focus:ring-green-500"
-              >
-                {datesWithSlots.map(d => (
-                  <option key={d} value={d}>
-                    {format(parseISO(d), "dd/MM/yyyy")}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-gray-400 uppercase">Horário</label>
-              <select 
-                value={time}
-                onChange={e => setTime(e.target.value)}
-                className="w-full px-4 py-3 bg-gray-50 rounded-xl outline-none focus:ring-2 focus:ring-green-500"
-              >
-                {availableSlots.map(s => <option key={s.id} value={s.time}>{s.time}</option>)}
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <button 
-          onClick={handleUpdate}
-          disabled={loading}
-          className="w-full bg-green-600 text-white py-4 rounded-xl font-bold shadow-lg shadow-green-200 hover:bg-green-700 transition-all disabled:opacity-50"
-        >
-          {loading ? 'Salvando...' : 'Salvar Alterações'}
-        </button>
-      </motion.div>
-    </div>
-  );
-}
-
 function AdminDashboard({ user }: { user: any }) {
   const [tab, setTab] = useState<'schedule' | 'bookings' | 'finance' | 'locations' | 'settings'>('schedule');
   const [bookings, setBookings] = useState<Booking[]>([]);
-  const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
   const [finance, setFinance] = useState<FinanceSummary | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isCalendarConnected, setIsCalendarConnected] = useState(false);
-
-  useEffect(() => {
-    const unsubscribe = onSnapshot(doc(db, 'settings', 'google_calendar'), (doc) => {
-      setIsCalendarConnected(doc.exists() && !!doc.data()?.refresh_token);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'GOOGLE_AUTH_SUCCESS') {
-        setIsCalendarConnected(true);
-      }
-    };
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, []);
-
-  const handleConnectCalendar = async () => {
-    try {
-      const response = await fetch('/api/auth/google/url');
-      const { url } = await response.json();
-      window.open(url, 'google_auth', 'width=600,height=700');
-    } catch (error) {
-      console.error('Erro ao conectar Google Calendar:', error);
-    }
-  };
+  const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
 
   useEffect(() => {
     let unsubscribe: () => void;
@@ -971,22 +725,9 @@ function AdminDashboard({ user }: { user: any }) {
   return (
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div>
-            <h2 className="text-3xl font-bold tracking-tight">Painel de Controle</h2>
-            <p className="text-gray-500">Gerencie seus horários, alunos e finanças.</p>
-          </div>
-          <button
-            onClick={handleConnectCalendar}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-              isCalendarConnected 
-                ? 'bg-green-50 text-green-600 border border-green-100' 
-                : 'bg-blue-600 text-white shadow-lg shadow-blue-200 hover:bg-blue-700'
-            }`}
-          >
-            <CalendarIcon size={16} />
-            {isCalendarConnected ? 'Agenda Conectada' : 'Conectar Google Agenda'}
-          </button>
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">Painel de Controle</h2>
+          <p className="text-gray-500">Gerencie seus horários, alunos e finanças.</p>
         </div>
         
         <div className="flex flex-wrap bg-white p-1 rounded-xl border border-gray-200 shadow-sm">
@@ -1018,7 +759,7 @@ function AdminDashboard({ user }: { user: any }) {
             onClick={() => setTab('settings')}
             className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${tab === 'settings' ? 'bg-green-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-700'}`}
           >
-            Configurações
+            <SettingsIcon size={16} />
           </button>
         </div>
       </div>
@@ -1032,6 +773,11 @@ function AdminDashboard({ user }: { user: any }) {
         {tab === 'locations' && (
           <motion.div key="locations" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <LocationManager user={user} />
+          </motion.div>
+        )}
+        {tab === 'settings' && (
+          <motion.div key="settings" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <SettingsManager user={user} />
           </motion.div>
         )}
         {tab === 'bookings' && (
@@ -1083,10 +829,10 @@ function AdminDashboard({ user }: { user: any }) {
                         <div className="flex gap-2">
                           <button 
                             onClick={() => setEditingBooking(booking)}
-                            className="p-2 text-gray-400 hover:text-blue-600 transition-colors"
-                            title="Editar Agendamento"
+                            className="p-2 text-gray-400 hover:text-green-600 transition-colors"
+                            title="Editar reserva"
                           >
-                            <Pencil size={18} />
+                            <Edit2 size={18} />
                           </button>
                           <button 
                             onClick={async () => {
@@ -1183,89 +929,196 @@ function AdminDashboard({ user }: { user: any }) {
             </div>
           </motion.div>
         )}
-        {tab === 'settings' && (
-          <motion.div 
-            key="settings"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="space-y-6"
-          >
-            <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 space-y-6">
-              <h3 className="font-bold text-xl flex items-center gap-2 text-red-600">
-                <Settings size={24} />
-                Zona de Perigo
-              </h3>
-              <p className="text-gray-500 text-sm">
-                Ações irreversíveis para o seu banco de dados. Use com cuidado.
-              </p>
-              
-              <div className="p-6 border border-red-100 rounded-2xl bg-red-50 space-y-4">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <h4 className="font-bold text-red-600">Limpar Todos os Agendamentos</h4>
-                    <p className="text-xs text-red-400">Remove permanentemente todos os registros de alunos e libera os horários.</p>
-                  </div>
-                  <button 
-                    onClick={async () => {
-                      if (confirm('ATENÇÃO: Isso apagará TODOS os agendamentos de alunos. Esta ação é irreversível. Deseja continuar?')) {
-                        try {
-                          const snapshot = await getDocs(collection(db, 'bookings'));
-                          const batch_promises = snapshot.docs.map(async (bookingDoc) => {
-                            const data = bookingDoc.data();
-                            if (data.slot_id) {
-                              await updateDoc(doc(db, 'slots', data.slot_id), { is_available: true });
-                            }
-                            await deleteDoc(doc(db, 'bookings', bookingDoc.id));
-                          });
-                          await Promise.all(batch_promises);
-                          alert('Todos os agendamentos foram removidos com sucesso!');
-                        } catch (error) {
-                          handleFirestoreError(error, OperationType.DELETE, 'bookings');
-                        }
-                      }
-                    }}
-                    className="px-4 py-2 bg-red-600 text-white rounded-xl text-xs font-bold hover:bg-red-700 transition-all shadow-md"
-                  >
-                    Limpar Agendamentos
-                  </button>
-                </div>
-
-                <div className="border-t border-red-100 pt-4 flex justify-between items-center">
-                  <div>
-                    <h4 className="font-bold text-red-600">Limpar Todos os Horários</h4>
-                    <p className="text-xs text-red-400">Remove todos os horários criados na agenda (slots).</p>
-                  </div>
-                  <button 
-                    onClick={async () => {
-                      if (confirm('ATENÇÃO: Isso apagará TODOS os horários da sua agenda. Deseja continuar?')) {
-                        try {
-                          const snapshot = await getDocs(collection(db, 'slots'));
-                          const batch_promises = snapshot.docs.map(slotDoc => deleteDoc(doc(db, 'slots', slotDoc.id)));
-                          await Promise.all(batch_promises);
-                          alert('Todos os horários foram removidos com sucesso!');
-                        } catch (error) {
-                          handleFirestoreError(error, OperationType.DELETE, 'slots');
-                        }
-                      }
-                    }}
-                    className="px-4 py-2 bg-red-600 text-white rounded-xl text-xs font-bold hover:bg-red-700 transition-all shadow-md"
-                  >
-                    Limpar Agenda
-                  </button>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        )}
       </AnimatePresence>
 
-      {editingBooking && (
-        <BookingEditModal 
-          booking={editingBooking} 
-          onClose={() => setEditingBooking(null)} 
-        />
-      )}
+      <AnimatePresence>
+        {editingBooking && (
+          <EditBookingModal 
+            booking={editingBooking} 
+            onClose={() => setEditingBooking(null)} 
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function EditBookingModal({ booking, onClose }: { booking: Booking, onClose: () => void }) {
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [availableSlots, setAvailableSlots] = useState<Slot[]>([]);
+  const [selectedLocationId, setSelectedLocationId] = useState('');
+  const [selectedDate, setSelectedDate] = useState('');
+  const [selectedSlotId, setSelectedSlotId] = useState(booking.slot_id);
+  const [bookingType, setBookingType] = useState(booking.booking_type);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'locations'), (snapshot) => {
+      setLocations(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Location)));
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    // Fetch available slots
+    const q = query(collection(db, 'slots'), where('is_available', '==', true));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setAvailableSlots(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Slot)));
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const selectedType = BOOKING_TYPES.find(t => t.name === bookingType);
+      
+      const updates: any = {
+        booking_type: bookingType,
+        price: selectedType?.price || 0,
+      };
+
+      if (selectedSlotId !== booking.slot_id) {
+        const newSlot = availableSlots.find(s => s.id === selectedSlotId);
+        const loc = locations.find(l => l.id === newSlot?.location_id);
+        
+        if (newSlot) {
+          // Free old slot
+          await updateDoc(doc(db, 'slots', booking.slot_id), { is_available: true });
+          // Reserve new slot
+          await updateDoc(doc(db, 'slots', selectedSlotId), { is_available: false });
+          
+          updates.slot_id = selectedSlotId;
+          updates.date = newSlot.date;
+          updates.time = newSlot.time;
+          updates.location_name = loc?.name || '';
+        }
+      }
+
+      await updateDoc(doc(db, 'bookings', booking.id), updates);
+      onClose();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'bookings');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const dates: string[] = Array.from(new Set(availableSlots.map(s => s.date))).sort() as string[];
+  const filteredSlots = availableSlots.filter(s => s.date === selectedDate && (selectedLocationId ? s.location_id === selectedLocationId : true));
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[110] p-4">
+      <motion.div 
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.9, opacity: 0 }}
+        className="bg-white p-8 rounded-3xl shadow-2xl max-w-xl w-full max-h-[90vh] overflow-y-auto space-y-6"
+      >
+        <div className="flex justify-between items-center border-b pb-4">
+          <h3 className="text-xl font-bold">Editar Reserva</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <XCircle size={24} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSave} className="space-y-6">
+          <div className="bg-gray-50 p-4 rounded-xl space-y-2">
+            <p className="text-xs font-bold text-gray-400 uppercase">Reserva Atual</p>
+            <div className="text-sm">
+              <span className="font-bold underline decoration-green-500">{booking.student_name}</span> - {booking.location_name} - {format(parseISO(booking.date), 'dd/MM')} às {booking.time}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-gray-400 uppercase">Tipo de Aula</label>
+              <select 
+                className="w-full px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none"
+                value={bookingType}
+                onChange={e => setBookingType(e.target.value)}
+              >
+                {BOOKING_TYPES.map(t => <option key={t.name} value={t.name}>{t.name} (R$ {t.price})</option>)}
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-gray-400 uppercase">Filtrar por Local</label>
+              <select 
+                className="w-full px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none"
+                value={selectedLocationId}
+                onChange={e => setSelectedLocationId(e.target.value)}
+              >
+                <option value="">Todos os locais</option>
+                {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-gray-400 uppercase">Mudar Data</label>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedDate('');
+                  setSelectedSlotId(booking.slot_id);
+                }}
+                className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${!selectedDate ? 'bg-green-600 text-white shadow-md' : 'bg-gray-50 text-gray-500'}`}
+              >
+                Manter Atual
+              </button>
+              {dates.map(date => (
+                <button
+                  key={date}
+                  type="button"
+                  onClick={() => setSelectedDate(date)}
+                  className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${selectedDate === date ? 'bg-green-600 text-white shadow-md' : 'bg-gray-50 text-gray-500'}`}
+                >
+                  {format(parseISO(date), 'dd/MM')}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {selectedDate && (
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-gray-400 uppercase">Selecione Novo Horário</label>
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                {filteredSlots.map(slot => (
+                  <button
+                    key={slot.id}
+                    type="button"
+                    onClick={() => setSelectedSlotId(slot.id)}
+                    className={`p-2 rounded-lg text-xs font-bold transition-all ${selectedSlotId === slot.id ? 'bg-green-600 text-white shadow-md' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'}`}
+                  >
+                    {slot.time}
+                    <div className="text-[8px] opacity-70 truncate">{locations.find(l => l.id === slot.location_id)?.name}</div>
+                  </button>
+                ))}
+                {filteredSlots.length === 0 && <p className="col-span-full text-center py-4 text-xs text-gray-400">Nenhum horário disponível para este filtro.</p>}
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-4 border-t">
+            <button 
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-3 rounded-xl font-bold bg-gray-100 text-gray-600 hover:bg-gray-200 transition-all"
+            >
+              Cancelar
+            </button>
+            <button 
+              disabled={loading}
+              className="flex-1 py-3 rounded-xl font-bold bg-green-600 text-white shadow-lg shadow-green-200 hover:bg-green-700 transition-all disabled:opacity-50"
+            >
+              {loading ? 'Salvando...' : 'Salvar Alterações'}
+            </button>
+          </div>
+        </form>
+      </motion.div>
     </div>
   );
 }
@@ -1590,6 +1443,83 @@ function LocationManager({ user }: { user: any }) {
             </div>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function SettingsManager({ user }: { user: any }) {
+  const [whatsappNumber, setWhatsappNumber] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(doc(db, 'settings', 'general'), (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data() as any;
+        setWhatsappNumber(data.whatsapp_number || '');
+      }
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'settings'));
+    return () => unsubscribe();
+  }, []);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      await setDoc(doc(db, 'settings', 'general'), {
+        whatsapp_number: whatsappNumber.replace(/\D/g, '')
+      });
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'settings');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-6">
+      <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 space-y-6">
+        <h3 className="font-bold text-xl flex items-center gap-2">
+          <SettingsIcon size={24} className="text-green-600" />
+          Configurações do Sistema
+        </h3>
+        
+        <form onSubmit={handleSave} className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-gray-400 uppercase">Número do WhatsApp (Destino das Notificações)</label>
+            <div className="relative">
+              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+              <input 
+                required
+                type="tel"
+                placeholder="Ex: 555599731123"
+                className="w-full pl-10 pr-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none"
+                value={whatsappNumber}
+                onChange={e => setWhatsappNumber(e.target.value)}
+              />
+            </div>
+            <p className="text-[10px] text-gray-400">Insira o número completo com DDI (Ex: 55 para Brasil), DDD e o número.</p>
+          </div>
+
+          <div className="flex justify-end">
+            <button 
+              disabled={loading}
+              className="bg-green-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-green-200 hover:bg-green-700 transition-all disabled:opacity-50 flex items-center gap-2"
+            >
+              {loading && <Loader2 className="animate-spin" size={18} />}
+              Salvar Configurações
+            </button>
+          </div>
+        </form>
+
+        {showSuccess && (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="bg-green-50 text-green-600 p-4 rounded-xl text-sm font-bold flex items-center gap-2">
+            <CheckCircle size={18} /> Configurações salvas com sucesso!
+          </motion.div>
+        )}
       </div>
     </div>
   );

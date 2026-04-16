@@ -93,17 +93,14 @@ service cloud.firestore {
       allow create: if isValidBooking(request.resource.data); // Public can create booking
       allow update, delete: if isAdmin();
     }
+
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
     
     match /test/connection {
       allow read: if true;
-    }
-
-    match /settings/google_calendar {
-      allow read, write: if true;
-    }
-
-    match /settings/{settingId} {
-      allow read, write: if isAdmin();
     }
   }
 }
