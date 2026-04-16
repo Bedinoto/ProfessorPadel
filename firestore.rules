@@ -97,5 +97,9 @@ service cloud.firestore {
     match /test/connection {
       allow read: if true;
     }
+
+    match /settings/{settingId} {
+      allow read, write: if isAdmin();
+    }
   }
 }

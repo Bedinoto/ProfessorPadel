@@ -4,20 +4,21 @@ import cors from "cors";
 import fs from "fs";
 import { google } from "googleapis";
 import admin from "firebase-admin";
+import { getFirestore } from "firebase-admin/firestore";
+import firebaseConfig from "./firebase-applet-config.json";
 
 // Initialize Firebase Admin
-// We'll try to use the credentials from the environment if available, 
-// otherwise we'll assume the app is running in a Google Cloud environment (like Cloud Run) 
-// where it can use Application Default Credentials.
 if (!admin.apps.length) {
   try {
-    admin.initializeApp();
+    admin.initializeApp({
+      projectId: firebaseConfig.projectId,
+    });
   } catch (e) {
-    console.error("Firebase Admin initialization failed. Make sure you are in a Google Cloud environment or have GOOGLE_APPLICATION_CREDENTIALS set.");
+    console.error("Firebase Admin initialization failed:", e);
   }
 }
 
-const db = admin.firestore();
+const db = getFirestore(firebaseConfig.firestoreDatabaseId);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -79,6 +80,7 @@ app.get("/api/auth/google/callback", async (req, res) => {
     if (tokens.refresh_token) {
       await db.collection('settings').doc('google_calendar').set({
         refresh_token: tokens.refresh_token,
+        admin_email: "uillian.bedinoto@gmail.com", // Added for security rules validation
         updated_at: admin.firestore.FieldValue.serverTimestamp()
       }, { merge: true });
     }
