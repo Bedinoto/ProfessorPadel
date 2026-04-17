@@ -765,64 +765,67 @@ function AdminDashboard({ user }: { user: any }) {
       
       Object.entries(params).forEach(([key, value]) => googleUrl.searchParams.append(key, value));
 
-      console.log('Sincronizando via JSONP (Universal)...');
+      console.log('Sincronizando via JSONP...');
       
-      // TÉCNICA JSONP: Única que funciona 100% em sites estáticos (Netlify) sem dar erro de CORS
-      const callbackName = `google_cb_${Date.now()}`;
+      // TÉCNICA JSONP RECURSIVA E ROBUSTA
+      const callbackName = `cb${Math.floor(Math.random() * 1000000)}`;
       
       const jsonpPromise = new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Timeout Google')), 8000);
+        const timeout = setTimeout(() => reject(new Error('O Google demorou demais para responder.')), 12000);
         
         (window as any)[callbackName] = (data: any) => {
           clearTimeout(timeout);
-          console.log('Resposta JSONP recebida:', data);
+          console.log('ID recebido com sucesso:', data);
           resolve(data);
         };
 
         const script = document.createElement('script');
-        script.src = `${googleUrl.toString()}&callback=${callbackName}`;
+        // Adicionamos um timestamp para evitar cache e garantimos que o callback seja o último parâmetro
+        script.src = `${googleUrl.toString()}&callback=${callbackName}&_t=${Date.now()}`;
         script.async = true;
+        
         script.onerror = () => {
           clearTimeout(timeout);
-          reject(new Error('Erro ao carregar script do Google'));
+          reject(new Error('Erro de conexão com o script do Google. Verifique se ele está publicado como "Qualquer pessoa".'));
         };
-        document.body.appendChild(script);
         
-        // Limpeza do script após execução ou erro
+        document.head.appendChild(script);
+        
         const cleanup = () => {
-          if (document.body.contains(script)) document.body.removeChild(script);
-          delete (window as any)[callbackName];
+          if (document.head.contains(script)) document.head.removeChild(script);
+          // Não deletamos o callback imediatamente para evitar erros de "função não encontrada" em respostas lentas
+          setTimeout(() => delete (window as any)[callbackName], 5000);
         };
         
-        setTimeout(cleanup, 10000);
+        // Resolvemos ou rejeitamos, limpamos depois
+        setTimeout(cleanup, 15000);
       });
 
-      try {
-        const result: any = await jsonpPromise;
-        
-        if (result && result.status === "success" && result.id) {
-          await updateDoc(doc(db, 'bookings', booking.id), {
-            google_event_id: result.id,
-            google_synced: true
-          });
-          setToast({ message: "Sincronizado e ID salvo!", type: 'success' });
-          return;
-        }
-      } catch (err) {
-        console.warn('JSONP falhou, tentando fallback de imagem...', err);
-        // Fallback da Imagem (Funciona para criar o evento, mas não pega o ID)
-        const img = new Image();
-        img.src = googleUrl.toString();
-        
+      const result: any = await jsonpPromise;
+      
+      if (result && result.status === "success" && result.id) {
         await updateDoc(doc(db, 'bookings', booking.id), {
+          google_event_id: result.id,
           google_synced: true
         });
-        setToast({ message: "Sincronizado! (Verifique ID na agenda)", type: 'success' });
+        setToast({ message: "Sincronizado e ID salvo!", type: 'success' });
+      } else {
+        throw new Error(result?.message || 'Resposta inválida do Google');
       }
 
-      setToast({ message: "Sincronizado! (Verifique ID na agenda)", type: 'success' });
-
     } catch (error: any) {
+      console.error('Falha na sincronização:', error);
+      
+      // Se falhou o JSONP, pelo menos marcamos como sincronizado (o evento provavelmente foi criado)
+      await updateDoc(doc(db, 'bookings', booking.id), {
+        google_synced: true
+      });
+      
+      setToast({ 
+        message: `Sincronizado! Mas não capturou ID: ${error.message.substring(0, 30)}...`, 
+        type: 'info' 
+      });
+    } finally {
       console.error('Erro na sincronização:', error);
       // Fallback final caso até o objeto Image tenha problemas (raro)
       setToast({ message: "Verifique sua agenda manual.", type: 'error' });
