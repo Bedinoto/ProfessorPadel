@@ -751,30 +751,40 @@ function AdminDashboard({ user }: { user: any }) {
     setSyncingIds(prev => new Set(prev).add(booking.id));
     
     try {
-      const params = new URLSearchParams({
-        scriptUrl: appSettings.google_script_url,
-        titulo: `Aula: ${booking.student_name}`,
-        inicio: `${booking.date} ${booking.time}`,
-        fim: `${booking.date} ${booking.time}`,
-        descricao: `Tipo: ${booking.booking_type}\nTelefone: ${booking.student_phone}`,
-        local: booking.location_name,
-        id_evento: booking.google_event_id || '',
-        id_sistema: booking.id
-      });
+      // CONSTRUÇÃO DA URL DIRETA PARA O GOOGLE (Evita 404 de Proxy)
+      const googleUrl = new URL(appSettings.google_script_url);
+      googleUrl.searchParams.append('titulo', `Aula: ${booking.student_name}`);
+      googleUrl.searchParams.append('inicio', `${booking.date} ${booking.time}`);
+      googleUrl.searchParams.append('fim', `${booking.date} ${booking.time}`);
+      googleUrl.searchParams.append('descricao', `Tipo: ${booking.booking_type}\nTelefone: ${booking.student_phone}`);
+      googleUrl.searchParams.append('local', booking.location_name);
+      googleUrl.searchParams.append('id_evento', booking.google_event_id || '');
+      googleUrl.searchParams.append('id_sistema', booking.id);
 
-      const apiUrl = `/api/sync-calendar?${params.toString()}`;
-      console.log('Tentando sincronização robusta via Proxy...');
+      console.log('Sincronizando diretamente com Google...');
       
-      const response = await fetch(apiUrl);
+      const response = await fetch(googleUrl.toString(), {
+        method: 'GET',
+        mode: 'cors', // Google Apps Script suporta CORS em GET
+        redirect: 'follow'
+      });
       
       let debugResponse = "";
       if (response.ok) {
-        const result = await response.json();
-        console.log('Resposta completa do Proxy:', result);
-        debugResponse = result.raw || JSON.stringify(result);
+        const text = await response.text();
+        debugResponse = text;
+        console.log('Resposta direta do Google:', text);
 
-        const calendarId = result.id || (result.raw && result.raw.length > 10 ? result.raw : null);
-        console.log('ID Detectado:', calendarId);
+        // Tenta extrair ID do JSON ou Texto
+        let calendarId = null;
+        try {
+          const json = JSON.parse(text);
+          calendarId = json.id;
+        } catch {
+          // Scanner de ID se não for JSON
+          const idMatch = text.match(/([a-zA-Z0-9\-_.~%]{15,}(?:@google\.com)?)/i);
+          if (idMatch) calendarId = idMatch[1];
+        }
         
         if (calendarId) {
           await updateDoc(doc(db, 'bookings', booking.id), {
@@ -785,25 +795,12 @@ function AdminDashboard({ user }: { user: any }) {
           return;
         }
       } else {
-        const errorText = await response.text().catch(() => "Sem corpo de erro");
-        debugResponse = `Erro ${response.status}: ${errorText.substring(0, 50)}`;
-        console.error('Erro no Proxy:', response.status, errorText);
+        debugResponse = `Erro HTTP ${response.status}`;
       }
       
-      // Fallback silencioso (Técnica da Imagem)
-      console.log('Usando técnica de fallback para garantir criação...');
-      const silentParams = new URLSearchParams({
-        titulo: `Aula: ${booking.student_name}`,
-        inicio: `${booking.date} ${booking.time}`,
-        fim: `${booking.date} ${booking.time}`,
-        descricao: `Tipo: ${booking.booking_type}\nTelefone: ${booking.student_phone}`,
-        local: booking.location_name,
-        id_evento: booking.google_event_id || '',
-        id_sistema: booking.id
-      });
-      
+      // Fallback da Imagem (Para casos de redirecionamento que o fetch as vezes barra)
       const img = new Image();
-      img.src = `${appSettings.google_script_url}?${silentParams.toString()}`;
+      img.src = `${appSettings.google_script_url}?${googleUrl.searchParams.toString()}`;
       
       await updateDoc(doc(db, 'bookings', booking.id), {
         google_synced: true
