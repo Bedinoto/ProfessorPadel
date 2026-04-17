@@ -94,7 +94,7 @@ async function startServer() {
       debugLog(`Google Response Status: ${response.status} ${response.statusText}`);
       
       const text = await response.text();
-      debugLog(`Google Raw Body (first 250 chars): ${text.substring(0, 250)}`);
+      debugLog(`Google Raw Body [FULL]: ${text}`);
 
       if (!response.ok) {
         return res.status(response.status).json({ error: `Erro no Script Google (${response.status}): ${text.substring(0, 200)}` });
@@ -102,21 +102,25 @@ async function startServer() {
 
       // Prevenção: Se o Google devolver HTML (página de erro), não é o que queremos
       if (text.toLowerCase().includes('<html')) {
-        debugLog("ALERTA: Google Script retornou HTML em vez de JSON/ID.");
-        return res.status(500).json({ error: "O Script do Google retornou uma página (HTML) em vez do ID. Verifique se você publicou como 'Web App' para 'Qualquer um'." });
+        debugLog("ALERTA: Google Script retornou HTML.");
+        return res.status(500).json({ error: "O Script do Google retornou HTML em vez do ID. Verifique a publicação do Script." });
       }
 
       try {
         const json = JSON.parse(text);
+        debugLog(`Parsed JSON: ${JSON.stringify(json)}`);
         res.json(json);
       } catch {
-        // Tenta extrair ID do texto se não for JSON
-        // Ex: "ID: 123", "Evento criado: abc", ou apenas "abc"
+        // Tenta extrair ID de QUALQUER LUGAR do texto
+        // Procura por algo que pareça um ID do Google (@google.com ou alfa-numérico longo)
+        const idMatch = text.match(/([a-zA-Z0-9]{15,}(?:@google\.com)?)/i);
         let extractedId = text.trim();
-        const idMatch = text.match(/(?:ID|criado):\s*([a-zA-Z0-9@._-]+)/i);
+        
         if (idMatch && idMatch[1]) {
            extractedId = idMatch[1];
-           debugLog(`ID extraído do texto: ${extractedId}`);
+           debugLog(`ID detectado no texto bruto: ${extractedId}`);
+        } else {
+           debugLog(`Nenhum padrão de ID encontrado no texto. Retornando texto bruto: ${extractedId}`);
         }
         res.json({ message: "Success", raw: extractedId });
       }

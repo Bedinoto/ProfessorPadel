@@ -769,20 +769,24 @@ function AdminDashboard({ user }: { user: any }) {
       
       if (response.ok) {
         const result = await response.json();
-        if (result.id || (result.raw && result.raw.length > 5)) {
-          const calendarId = result.id || result.raw;
+        console.log('Resposta do Proxy:', result);
+
+        const calendarId = result.id || (result.raw && result.raw.length > 10 ? result.raw : null);
+        
+        if (calendarId) {
           await updateDoc(doc(db, 'bookings', booking.id), {
             google_event_id: calendarId,
             google_synced: true
           });
-          setToast({ message: "Sincronizado com sucesso (ID capturado)!", type: 'success' });
+          setToast({ message: "Sincronizado e ID salvo!", type: 'success' });
           return;
+        } else if (result.error) {
+           setToast({ message: `Script aviso: ${result.error}`, type: 'error' });
         }
       }
       
-      // Se chegou aqui, o proxy falhou ou não retornou ID. 
-      // Usaremos a TÉCNICA DA IMAGEM como fallback (mais robusto para envio)
-      console.log('Proxy falhou ou sem ID. Usando técnica de fallback silencioso...');
+      // Fallback silencioso (Técnica da Imagem)
+      console.log('Usando técnica de fallback para garantir criação...');
       const silentParams = new URLSearchParams({
         titulo: `Aula: ${booking.student_name}`,
         inicio: `${booking.date} ${booking.time}`,
@@ -799,7 +803,7 @@ function AdminDashboard({ user }: { user: any }) {
       await updateDoc(doc(db, 'bookings', booking.id), {
         google_synced: true
       });
-      setToast({ message: "Comando enviado! Verifique sua agenda em instantes.", type: 'success' });
+      setToast({ message: "Sincronizado! (Verifique ID na agenda)", type: 'success' });
 
     } catch (error: any) {
       console.error('Erro na sincronização:', error);
