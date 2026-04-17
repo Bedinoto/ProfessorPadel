@@ -281,8 +281,9 @@ function PublicBooking() {
 
       // Send WhatsApp Notification
       try {
-        const message = `🎾 *Nova Reserva de Aula!*
-        
+        if (appSettings?.whatsapp_enabled !== false) {
+          const message = `🎾 *Nova Reserva de Aula!*
+          
 📍 *Local:* ${selectedLocation?.name}
 📅 *Data:* ${format(selectedDate, "dd/MM/yyyy")}
 ⏰ *Hora:* ${selectedSlot.time}
@@ -290,18 +291,19 @@ function PublicBooking() {
 📞 *Contato:* ${formData.phone}
 📝 *Tipo:* ${formData.type}`;
 
-        await fetch('https://bedinoto.uazapi.com/send/text', {
-          method: 'POST',
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-            'token': 'a5fdab6f-0e1d-407c-aa4e-e6b44f935509'
-          },
-          body: JSON.stringify({
-            number: appSettings?.whatsapp_number || "555599731123",
-            text: message
-          })
-        });
+          await fetch('https://bedinoto.uazapi.com/send/text', {
+            method: 'POST',
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json',
+              'token': 'a5fdab6f-0e1d-407c-aa4e-e6b44f935509'
+            },
+            body: JSON.stringify({
+              number: appSettings?.whatsapp_number || "555599731123",
+              text: message
+            })
+          });
+        }
       } catch (notifyError) {
         console.error('Erro ao enviar notificação:', notifyError);
       }
@@ -948,7 +950,7 @@ function AdminDashboard({ user }: { user: any }) {
                           <button 
                             disabled={syncingIds.has(booking.id)}
                             onClick={() => handleCalendarSync(booking)}
-                            className={`p-2 transition-colors ${syncingIds.has(booking.id) ? 'opacity-50' : booking.google_synced ? 'text-blue-600 hover:text-blue-800' : 'text-gray-400 hover:text-blue-600'}`}
+                            className={`p-2 transition-colors ${syncingIds.has(booking.id) ? 'opacity-50' : booking.google_synced ? 'text-green-600 hover:text-green-800' : 'text-red-500 hover:text-red-700'}`}
                             title={booking.google_synced ? "Sincronizado com Google Calendar" : "Enviar para Google Calendar"}
                           >
                             {syncingIds.has(booking.id) ? (
@@ -1610,6 +1612,7 @@ function LocationManager({ user }: { user: any }) {
 function SettingsManager({ user }: { user: any }) {
   const [whatsappNumber, setWhatsappNumber] = useState('');
   const [googleScriptUrl, setGoogleScriptUrl] = useState('');
+  const [whatsappEnabled, setWhatsappEnabled] = useState(true);
   const [loading, setLoading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
@@ -1619,6 +1622,7 @@ function SettingsManager({ user }: { user: any }) {
         const data = snapshot.data() as any;
         setWhatsappNumber(data.whatsapp_number || '');
         setGoogleScriptUrl(data.google_script_url || '');
+        setWhatsappEnabled(data.whatsapp_enabled !== false);
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'settings'));
     return () => unsubscribe();
@@ -1630,7 +1634,8 @@ function SettingsManager({ user }: { user: any }) {
     try {
       await setDoc(doc(db, 'settings', 'general'), {
         whatsapp_number: whatsappNumber.replace(/\D/g, ''),
-        google_script_url: googleScriptUrl.trim()
+        google_script_url: googleScriptUrl.trim(),
+        whatsapp_enabled: whatsappEnabled
       });
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 3000);
@@ -1651,14 +1656,31 @@ function SettingsManager({ user }: { user: any }) {
         
         <form onSubmit={handleSave} className="space-y-4">
           <div className="space-y-2">
-            <label className="text-xs font-bold text-gray-400 uppercase">Número do WhatsApp (Destino das Notificações)</label>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-gray-400 uppercase">Número do WhatsApp (Destino das Notificações)</label>
+              <button
+                type="button"
+                onClick={() => setWhatsappEnabled(!whatsappEnabled)}
+                className={`flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-bold transition-all ${
+                  whatsappEnabled 
+                    ? 'bg-green-100 text-green-600 border border-green-200' 
+                    : 'bg-red-100 text-red-600 border border-red-200'
+                }`}
+              >
+                {whatsappEnabled ? (
+                  <><CheckCircle size={12} /> ATIVO</>
+                ) : (
+                  <><XCircle size={12} /> INATIVO</>
+                )}
+              </button>
+            </div>
             <div className="relative">
               <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
               <input 
                 required
                 type="tel"
                 placeholder="Ex: 555599731123"
-                className="w-full pl-10 pr-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none"
+                className={`w-full pl-10 pr-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none transition-opacity ${!whatsappEnabled ? 'opacity-50' : ''}`}
                 value={whatsappNumber}
                 onChange={e => setWhatsappNumber(e.target.value)}
               />
