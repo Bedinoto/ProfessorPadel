@@ -744,7 +744,7 @@ function AdminDashboard({ user }: { user: any }) {
 
   const handleCalendarSync = async (booking: Booking) => {
     if (!appSettings?.google_script_url) {
-      alert('Por favor, configure a URL do Script do Google nas configurações.');
+      setToast({ message: 'Configure a URL do Script do Google nas configurações.', type: 'error' });
       return;
     }
 
@@ -788,30 +788,15 @@ function AdminDashboard({ user }: { user: any }) {
         });
         
         if (result.error) {
-           setToast({ message: `Aviso: ${result.error}`, type: 'error' });
-           if (confirm(`Mensagem do Script: ${result.error}. Deseja abrir manualmente?`)) {
-             window.open(`${appSettings.google_script_url}?${params.toString()}`, '_blank');
-           }
+           console.warn('Script do Google retornou um aviso:', result.error);
+           setToast({ message: `Script aviso: ${result.error}`, type: 'error' });
         } else {
           setToast({ message: "Enviado para a agenda!", type: 'success' });
         }
       }
     } catch (error: any) {
       console.error('Erro detalhado na sincronização:', error);
-      setToast({ message: "Falha na sincronização", type: 'error' });
-      
-      if (confirm(`Erro: ${error.message}\n\nDeseja abrir manualmente para salvar?`)) {
-        const manualParams = new URLSearchParams({
-          titulo: `Aula: ${booking.student_name}`,
-          inicio: `${booking.date} ${booking.time}`,
-          fim: `${booking.date} ${booking.time}`,
-          descricao: `Tipo: ${booking.booking_type}\nTelefone: ${booking.student_phone}`,
-          local: booking.location_name,
-          id_evento: booking.google_event_id || '',
-          id_sistema: booking.id
-        });
-        window.open(`${appSettings.google_script_url}?${manualParams.toString()}`, '_blank');
-      }
+      setToast({ message: `Status: verifique sua agenda. (${error.message})`, type: 'error' });
     } finally {
       setSyncingIds(prev => {
         const next = new Set(prev);
