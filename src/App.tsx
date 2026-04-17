@@ -784,6 +784,10 @@ function AdminDashboard({ user }: { user: any }) {
           setToast({ message: "Sincronizado e ID salvo!", type: 'success' });
           return;
         }
+      } else {
+        const errorText = await response.text().catch(() => "Sem corpo de erro");
+        debugResponse = `Erro ${response.status}: ${errorText.substring(0, 50)}`;
+        console.error('Erro no Proxy:', response.status, errorText);
       }
       
       // Fallback silencioso (Técnica da Imagem)

@@ -34,10 +34,8 @@ async function startServer() {
 
   // --- GLOBAL REQUEST LOGGER ---
   app.use((req, res, next) => {
-    // Only log API routes to avoid log spamming from assets
-    if (req.url.startsWith('/api')) {
-      debugLog(`${req.method} ${req.url} - IP: ${req.ip}`);
-    }
+    // Log EVERY request to identify routing issues
+    debugLog(`[REQUEST] ${req.method} ${req.url} - IP: ${req.ip} - Origin: ${req.headers.origin}`);
     next();
   });
 
