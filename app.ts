@@ -32,9 +32,12 @@ async function startServer() {
   app.use(cors());
   app.use(express.json());
 
-  // Middleware to log every single request
+  // --- GLOBAL REQUEST LOGGER ---
   app.use((req, res, next) => {
-    debugLog(`${req.method} ${req.url} - IP: ${req.ip}`);
+    // Only log API routes to avoid log spamming from assets
+    if (req.url.startsWith('/api')) {
+      debugLog(`${req.method} ${req.url} - IP: ${req.ip}`);
+    }
     next();
   });
 
@@ -97,12 +100,25 @@ async function startServer() {
         return res.status(response.status).json({ error: `Erro no Script Google (${response.status}): ${text.substring(0, 200)}` });
       }
 
+      // Prevenção: Se o Google devolver HTML (página de erro), não é o que queremos
+      if (text.toLowerCase().includes('<html')) {
+        debugLog("ALERTA: Google Script retornou HTML em vez de JSON/ID.");
+        return res.status(500).json({ error: "O Script do Google retornou uma página (HTML) em vez do ID. Verifique se você publicou como 'Web App' para 'Qualquer um'." });
+      }
+
       try {
         const json = JSON.parse(text);
         res.json(json);
       } catch {
-        // Trata o caso onde o Google retorna o ID como texto puro
-        res.json({ message: "Success", raw: text.trim() });
+        // Tenta extrair ID do texto se não for JSON
+        // Ex: "ID: 123", "Evento criado: abc", ou apenas "abc"
+        let extractedId = text.trim();
+        const idMatch = text.match(/(?:ID|criado):\s*([a-zA-Z0-9@._-]+)/i);
+        if (idMatch && idMatch[1]) {
+           extractedId = idMatch[1];
+           debugLog(`ID extraído do texto: ${extractedId}`);
+        }
+        res.json({ message: "Success", raw: extractedId });
       }
     } catch (error: any) {
       debugLog(`CRITICAL PROXY ERROR: ${error.message}`);
