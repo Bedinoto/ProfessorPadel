@@ -5,3 +5,8 @@
 [build.environment]
   # Desativa o scanner de segredos que está bloqueando o build por causa da chave do Firebase
   SECRETS_SCAN_SMART_DETECTION_ENABLED = "false"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
