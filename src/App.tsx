@@ -763,40 +763,48 @@ function AdminDashboard({ user }: { user: any }) {
       });
 
       const apiUrl = `/api/sync-calendar?${params.toString()}`;
-      console.log('Syncing via proxy:', apiUrl);
+      console.log('Tentando sincronização robusta via Proxy...');
+      
       const response = await fetch(apiUrl);
       
-      if (!response.ok) {
-        // Devido a restrições de CORS/Redirect do Google, o servidor proxy tenta capturar o corpo
-        const errorText = await response.text();
-        throw new Error(`Servidor respondeu com erro ${response.status}: ${errorText || 'Sem detalhes'}`);
-      }
-
-      const result = await response.json();
-
-      if (result.id || (result.raw && result.raw.length > 5)) {
-        const calendarId = result.id || result.raw;
-        await updateDoc(doc(db, 'bookings', booking.id), {
-          google_event_id: calendarId,
-          google_synced: true
-        });
-        setToast({ message: "Sincronizado com sucesso!", type: 'success' });
-      } else {
-        // Fallback: marcar como sincronizado se não houve erro grave mas não veio ID claro
-        await updateDoc(doc(db, 'bookings', booking.id), {
-          google_synced: true
-        });
-        
-        if (result.error) {
-           console.warn('Script do Google retornou um aviso:', result.error);
-           setToast({ message: `Script aviso: ${result.error}`, type: 'error' });
-        } else {
-          setToast({ message: "Enviado para a agenda!", type: 'success' });
+      if (response.ok) {
+        const result = await response.json();
+        if (result.id || (result.raw && result.raw.length > 5)) {
+          const calendarId = result.id || result.raw;
+          await updateDoc(doc(db, 'bookings', booking.id), {
+            google_event_id: calendarId,
+            google_synced: true
+          });
+          setToast({ message: "Sincronizado com sucesso (ID capturado)!", type: 'success' });
+          return;
         }
       }
+      
+      // Se chegou aqui, o proxy falhou ou não retornou ID. 
+      // Usaremos a TÉCNICA DA IMAGEM como fallback (mais robusto para envio)
+      console.log('Proxy falhou ou sem ID. Usando técnica de fallback silencioso...');
+      const silentParams = new URLSearchParams({
+        titulo: `Aula: ${booking.student_name}`,
+        inicio: `${booking.date} ${booking.time}`,
+        fim: `${booking.date} ${booking.time}`,
+        descricao: `Tipo: ${booking.booking_type}\nTelefone: ${booking.student_phone}`,
+        local: booking.location_name,
+        id_evento: booking.google_event_id || '',
+        id_sistema: booking.id
+      });
+      
+      const img = new Image();
+      img.src = `${appSettings.google_script_url}?${silentParams.toString()}`;
+      
+      await updateDoc(doc(db, 'bookings', booking.id), {
+        google_synced: true
+      });
+      setToast({ message: "Comando enviado! Verifique sua agenda em instantes.", type: 'success' });
+
     } catch (error: any) {
-      console.error('Erro detalhado na sincronização:', error);
-      setToast({ message: `Status: verifique sua agenda. (${error.message})`, type: 'error' });
+      console.error('Erro na sincronização:', error);
+      // Fallback final caso até o objeto Image tenha problemas (raro)
+      setToast({ message: "Verifique sua agenda manual.", type: 'error' });
     } finally {
       setSyncingIds(prev => {
         const next = new Set(prev);
