@@ -856,21 +856,25 @@ function AdminDashboard({ user }: { user: any }) {
                                 const params = new URLSearchParams({
                                   titulo: `Aula: ${booking.student_name}`,
                                   inicio: `${booking.date} ${booking.time}`,
-                                  fim: `${booking.date} ${booking.time}`, // Simplificado para mesma hora, ajuste se necessário
+                                  fim: `${booking.date} ${booking.time}`,
                                   descricao: `Tipo: ${booking.booking_type}\nTelefone: ${booking.student_phone}`,
                                   local: booking.location_name,
-                                  id_evento: booking.google_event_id || ''
+                                  id_evento: booking.google_event_id || '',
+                                  id_sistema: booking.id
                                 });
                                 
-                                // O Google Script com doGet retorna via redirecionamento, 
-                                // abrir em popup ou nova aba é mais seguro que fetch direto devido a CORS em WebApps
                                 window.open(`${baseUrl}?${params.toString()}`, '_blank');
+
+                                // Marcar como sincronizado no Firestore
+                                await updateDoc(doc(db, 'bookings', booking.id), {
+                                  google_synced: true
+                                });
                               } catch (error) {
                                 console.error('Erro ao enviar para Google Calendar:', error);
                               }
                             }}
-                            className="p-2 text-gray-400 hover:text-blue-600 transition-colors"
-                            title="Enviar para Google Calendar"
+                            className={`p-2 transition-colors ${booking.google_synced ? 'text-blue-600 hover:text-blue-800' : 'text-gray-400 hover:text-blue-600'}`}
+                            title={booking.google_synced ? "Sincronizado com Google Calendar" : "Enviar para Google Calendar"}
                           >
                             <CalendarIcon size={18} />
                           </button>
@@ -1018,7 +1022,8 @@ function EditBookingModal({ booking, onClose }: { booking: Booking, onClose: () 
       const updates: any = {
         booking_type: bookingType,
         price: selectedType?.price || 0,
-        google_event_id: googleEventId.trim()
+        google_event_id: googleEventId.trim(),
+        google_synced: false // Resetar para exigir nova sincronização se houver alteração
       };
 
       if (selectedSlotId !== booking.slot_id) {

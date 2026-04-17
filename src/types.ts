@@ -23,6 +23,7 @@ export interface Booking {
   time: string;
   location_name: string;
   google_event_id?: string;
+  google_synced?: boolean;
 }
 
 export interface FinanceSummary {
