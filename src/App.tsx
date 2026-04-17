@@ -689,6 +689,7 @@ function AdminDashboard({ user }: { user: any }) {
   const [loading, setLoading] = useState(true);
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
+  const [syncingIds, setSyncingIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     // Fetch app settings
@@ -732,6 +733,71 @@ function AdminDashboard({ user }: { user: any }) {
       if (unsubscribe) unsubscribe();
     };
   }, [tab]);
+
+  const handleCalendarSync = async (booking: Booking) => {
+    if (!appSettings?.google_script_url) {
+      alert('Por favor, configure a URL do Script do Google nas configurações.');
+      return;
+    }
+
+    setSyncingIds(prev => new Set(prev).add(booking.id));
+    
+    try {
+      const params = new URLSearchParams({
+        scriptUrl: appSettings.google_script_url,
+        titulo: `Aula: ${booking.student_name}`,
+        inicio: `${booking.date} ${booking.time}`,
+        fim: `${booking.date} ${booking.time}`,
+        descricao: `Tipo: ${booking.booking_type}\nTelefone: ${booking.student_phone}`,
+        local: booking.location_name,
+        id_evento: booking.google_event_id || '',
+        id_sistema: booking.id
+      });
+
+      const response = await fetch(`/api/sync-calendar?${params.toString()}`);
+      const result = await response.json();
+
+      if (result.id) {
+        // Sucesso capturando o ID do Google
+        await updateDoc(doc(db, 'bookings', booking.id), {
+          google_event_id: result.id,
+          google_synced: true
+        });
+      } else {
+        // Fallback: marcar como sincronizado e abrir manual se necessário
+        await updateDoc(doc(db, 'bookings', booking.id), {
+          google_synced: true
+        });
+        
+        // Se houver erro ou não retornar ID, avisar e oferecer manual
+        if (result.error) {
+           if (confirm(`Erro no Script: ${result.error}. Deseja abrir manualmente?`)) {
+             window.open(`${appSettings.google_script_url}?${params.toString()}`, '_blank');
+           }
+        }
+      }
+    } catch (error: any) {
+      console.error('Erro na sincronização:', error);
+      if (confirm('Não foi possível sincronizar automaticamente (CORS ou erro de rede). Deseja abrir manualmente?')) {
+        const manualParams = new URLSearchParams({
+          titulo: `Aula: ${booking.student_name}`,
+          inicio: `${booking.date} ${booking.time}`,
+          fim: `${booking.date} ${booking.time}`,
+          descricao: `Tipo: ${booking.booking_type}\nTelefone: ${booking.student_phone}`,
+          local: booking.location_name,
+          id_evento: booking.google_event_id || '',
+          id_sistema: booking.id
+        });
+        window.open(`${appSettings.google_script_url}?${manualParams.toString()}`, '_blank');
+      }
+    } finally {
+      setSyncingIds(prev => {
+        const next = new Set(prev);
+        next.delete(booking.id);
+        return next;
+      });
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -846,37 +912,16 @@ function AdminDashboard({ user }: { user: any }) {
                             <Edit2 size={18} />
                           </button>
                           <button 
-                            onClick={async () => {
-                              if (!appSettings?.google_script_url) {
-                                alert('Por favor, configure a URL do Script do Google nas configurações.');
-                                return;
-                              }
-                              try {
-                                const baseUrl = appSettings.google_script_url;
-                                const params = new URLSearchParams({
-                                  titulo: `Aula: ${booking.student_name}`,
-                                  inicio: `${booking.date} ${booking.time}`,
-                                  fim: `${booking.date} ${booking.time}`,
-                                  descricao: `Tipo: ${booking.booking_type}\nTelefone: ${booking.student_phone}`,
-                                  local: booking.location_name,
-                                  id_evento: booking.google_event_id || '',
-                                  id_sistema: booking.id
-                                });
-                                
-                                window.open(`${baseUrl}?${params.toString()}`, '_blank');
-
-                                // Marcar como sincronizado no Firestore
-                                await updateDoc(doc(db, 'bookings', booking.id), {
-                                  google_synced: true
-                                });
-                              } catch (error) {
-                                console.error('Erro ao enviar para Google Calendar:', error);
-                              }
-                            }}
-                            className={`p-2 transition-colors ${booking.google_synced ? 'text-blue-600 hover:text-blue-800' : 'text-gray-400 hover:text-blue-600'}`}
+                            disabled={syncingIds.has(booking.id)}
+                            onClick={() => handleCalendarSync(booking)}
+                            className={`p-2 transition-colors ${syncingIds.has(booking.id) ? 'opacity-50' : booking.google_synced ? 'text-blue-600 hover:text-blue-800' : 'text-gray-400 hover:text-blue-600'}`}
                             title={booking.google_synced ? "Sincronizado com Google Calendar" : "Enviar para Google Calendar"}
                           >
-                            <CalendarIcon size={18} />
+                            {syncingIds.has(booking.id) ? (
+                              <Loader2 size={18} className="animate-spin" />
+                            ) : (
+                              <CalendarIcon size={18} />
+                            )}
                           </button>
                           <button 
                             onClick={async () => {

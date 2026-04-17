@@ -53,6 +53,39 @@ async function startServer() {
     res.json(info);
   });
 
+  // --- GOOGLE CALENDAR PROXY ---
+  app.get("/api/sync-calendar", async (req, res) => {
+    const { scriptUrl, ...params } = req.query;
+    if (!scriptUrl) return res.status(400).json({ error: "Script URL is required" });
+
+    try {
+      const url = new URL(scriptUrl as string);
+      Object.entries(params).forEach(([key, value]) => {
+        if (value) url.searchParams.append(key, value as string);
+      });
+
+      debugLog(`Proxying Calendar Request to: ${url.toString()}`);
+      
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        redirect: 'follow'
+      });
+
+      const text = await response.text();
+      debugLog(`Google Response: ${text.substring(0, 100)}...`);
+
+      try {
+        const json = JSON.parse(text);
+        res.json(json);
+      } catch {
+        res.json({ message: "Success (Non-JSON response)", raw: text });
+      }
+    } catch (error: any) {
+      debugLog(`Proxy Error: ${error.message}`);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // --- VITE MIDDLEWARE OR STATIC SERVING ---
   if (process.env.NODE_ENV !== "production") {
     debugLog("Starting Vite in middleware mode...");
