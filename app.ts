@@ -56,6 +56,8 @@ async function startServer() {
   // --- GOOGLE CALENDAR PROXY ---
   app.get("/api/sync-calendar", async (req, res) => {
     const { scriptUrl, ...params } = req.query;
+    debugLog(`Sync Request Received - scriptUrl: ${scriptUrl ? 'present' : 'missing'}`);
+    
     if (!scriptUrl) return res.status(400).json({ error: "Script URL is required" });
 
     try {
@@ -64,25 +66,36 @@ async function startServer() {
         if (value) url.searchParams.append(key, value as string);
       });
 
-      debugLog(`Proxying Calendar Request to: ${url.toString()}`);
+      debugLog(`Proxying to Google: ${url.toString()}`);
       
       const response = await fetch(url.toString(), {
         method: 'GET',
+        headers: {
+          'User-Agent': 'Mozilla/5.0' // Alguns serviços bloqueiam requests sem UA
+        },
         redirect: 'follow'
       });
 
+      debugLog(`Google Response Status: ${response.status} ${response.statusText}`);
+      
       const text = await response.text();
-      debugLog(`Google Response: ${text.substring(0, 100)}...`);
+      debugLog(`Google Raw Body (first 200 chars): ${text.substring(0, 200)}`);
+
+      if (!response.ok) {
+        return res.status(response.status).json({ error: `Google Script Error: ${text}` });
+      }
 
       try {
         const json = JSON.parse(text);
         res.json(json);
       } catch {
-        res.json({ message: "Success (Non-JSON response)", raw: text });
+        // Se não for JSON, devolvemos o texto bruto no campo 'raw'
+        // Isso cobre o caso onde o script retorna apenas o ID como string
+        res.json({ message: "Success", raw: text.trim() });
       }
     } catch (error: any) {
-      debugLog(`Proxy Error: ${error.message}`);
-      res.status(500).json({ error: error.message });
+      debugLog(`CRITICAL PROXY ERROR: ${error.message}`);
+      res.status(500).json({ error: `Erro no Servidor Proxy: ${error.message}` });
     }
   });
 

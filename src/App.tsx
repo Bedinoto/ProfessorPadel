@@ -755,30 +755,41 @@ function AdminDashboard({ user }: { user: any }) {
       });
 
       const response = await fetch(`/api/sync-calendar?${params.toString()}`);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Servidor retornou erro (${response.status}): ${errorText}`);
+      }
+
       const result = await response.json();
 
       if (result.id) {
-        // Sucesso capturando o ID do Google
+        // Sucesso capturando o ID do Google via JSON
         await updateDoc(doc(db, 'bookings', booking.id), {
           google_event_id: result.id,
           google_synced: true
         });
+      } else if (result.raw && result.raw.length > 5) {
+        // Sucesso capturando ID via texto puro
+        await updateDoc(doc(db, 'bookings', booking.id), {
+          google_event_id: result.raw,
+          google_synced: true
+        });
       } else {
-        // Fallback: marcar como sincronizado e abrir manual se necessário
+        // Fallback: marcar como sincronizado se não houve erro mas não veio ID
         await updateDoc(doc(db, 'bookings', booking.id), {
           google_synced: true
         });
         
-        // Se houver erro ou não retornar ID, avisar e oferecer manual
         if (result.error) {
-           if (confirm(`Erro no Script: ${result.error}. Deseja abrir manualmente?`)) {
+           if (confirm(`Mensagem do Script: ${result.error}. Deseja abrir manualmente?`)) {
              window.open(`${appSettings.google_script_url}?${params.toString()}`, '_blank');
            }
         }
       }
     } catch (error: any) {
-      console.error('Erro na sincronização:', error);
-      if (confirm('Não foi possível sincronizar automaticamente (CORS ou erro de rede). Deseja abrir manualmente?')) {
+      console.error('Erro detalhado na sincronização:', error);
+      if (confirm(`Erro na sincronização automática: ${error.message}\n\nDeseja abrir manualmente para salvar?`)) {
         const manualParams = new URLSearchParams({
           titulo: `Aula: ${booking.student_name}`,
           inicio: `${booking.date} ${booking.time}`,
