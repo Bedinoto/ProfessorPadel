@@ -690,6 +690,14 @@ function AdminDashboard({ user }: { user: any }) {
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
   const [syncingIds, setSyncingIds] = useState<Set<string>>(new Set());
+  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
 
   useEffect(() => {
     // Fetch app settings
@@ -759,39 +767,40 @@ function AdminDashboard({ user }: { user: any }) {
       const response = await fetch(apiUrl);
       
       if (!response.ok) {
+        // Devido a restrições de CORS/Redirect do Google, o servidor proxy tenta capturar o corpo
         const errorText = await response.text();
-        throw new Error(`Servidor (Proxy) retornou erro ${response.status}: ${errorText || 'Sem detalhes'}`);
+        throw new Error(`Servidor respondeu com erro ${response.status}: ${errorText || 'Sem detalhes'}`);
       }
 
       const result = await response.json();
 
-      if (result.id) {
-        // Sucesso capturando o ID do Google via JSON
+      if (result.id || (result.raw && result.raw.length > 5)) {
+        const calendarId = result.id || result.raw;
         await updateDoc(doc(db, 'bookings', booking.id), {
-          google_event_id: result.id,
+          google_event_id: calendarId,
           google_synced: true
         });
-      } else if (result.raw && result.raw.length > 5) {
-        // Sucesso capturando ID via texto puro
-        await updateDoc(doc(db, 'bookings', booking.id), {
-          google_event_id: result.raw,
-          google_synced: true
-        });
+        setToast({ message: "Sincronizado com sucesso!", type: 'success' });
       } else {
-        // Fallback: marcar como sincronizado se não houve erro mas não veio ID
+        // Fallback: marcar como sincronizado se não houve erro grave mas não veio ID claro
         await updateDoc(doc(db, 'bookings', booking.id), {
           google_synced: true
         });
         
         if (result.error) {
+           setToast({ message: `Aviso: ${result.error}`, type: 'error' });
            if (confirm(`Mensagem do Script: ${result.error}. Deseja abrir manualmente?`)) {
              window.open(`${appSettings.google_script_url}?${params.toString()}`, '_blank');
            }
+        } else {
+          setToast({ message: "Enviado para a agenda!", type: 'success' });
         }
       }
     } catch (error: any) {
       console.error('Erro detalhado na sincronização:', error);
-      if (confirm(`Erro na sincronização automática: ${error.message}\n\nDeseja abrir manualmente para salvar?`)) {
+      setToast({ message: "Falha na sincronização", type: 'error' });
+      
+      if (confirm(`Erro: ${error.message}\n\nDeseja abrir manualmente para salvar?`)) {
         const manualParams = new URLSearchParams({
           titulo: `Aula: ${booking.student_name}`,
           inicio: `${booking.date} ${booking.time}`,
@@ -1039,6 +1048,22 @@ function AdminDashboard({ user }: { user: any }) {
             booking={editingBooking} 
             onClose={() => setEditingBooking(null)} 
           />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 50, scale: 0.9 }}
+            className={`fixed bottom-8 left-1/2 -translate-x-1/2 px-6 py-3 rounded-2xl shadow-2xl z-[200] flex items-center gap-3 border transition-colors ${
+              toast.type === 'success' ? 'bg-green-600 border-green-500 text-white' : 'bg-red-600 border-red-500 text-white'
+            }`}
+          >
+            {toast.type === 'success' ? <CheckCircle size={20} /> : <XCircle size={20} />}
+            <span className="font-bold text-sm text-white">{toast.message}</span>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

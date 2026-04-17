@@ -73,7 +73,7 @@ async function startServer() {
       const response = await fetch(url.toString(), {
         method: 'GET',
         headers: {
-          'User-Agent': 'Mozilla/5.0' // Alguns serviços bloqueiam requests sem UA
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         },
         redirect: 'follow'
       });
@@ -81,23 +81,22 @@ async function startServer() {
       debugLog(`Google Response Status: ${response.status} ${response.statusText}`);
       
       const text = await response.text();
-      debugLog(`Google Raw Body (first 200 chars): ${text.substring(0, 200)}`);
+      debugLog(`Google Raw Body (first 250 chars): ${text.substring(0, 250)}`);
 
       if (!response.ok) {
-        return res.status(response.status).json({ error: `Google Script Error: ${text}` });
+        return res.status(response.status).json({ error: `Erro no Script Google (${response.status}): ${text.substring(0, 200)}` });
       }
 
       try {
         const json = JSON.parse(text);
         res.json(json);
       } catch {
-        // Se não for JSON, devolvemos o texto bruto no campo 'raw'
-        // Isso cobre o caso onde o script retorna apenas o ID como string
+        // Trata o caso onde o Google retorna o ID como texto puro
         res.json({ message: "Success", raw: text.trim() });
       }
     } catch (error: any) {
       debugLog(`CRITICAL PROXY ERROR: ${error.message}`);
-      res.status(500).json({ error: `Erro no Servidor Proxy: ${error.message}` });
+      res.status(500).json({ error: `Falha técnica no Proxy: ${error.message}` });
     }
   });
 
