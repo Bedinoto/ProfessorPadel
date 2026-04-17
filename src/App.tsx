@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Calendar as CalendarIcon, 
@@ -191,6 +191,15 @@ function PublicBooking() {
   const [formData, setFormData] = useState({ name: '', phone: '', type: 'Individual' });
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
+  const bookingFormRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (selectedSlot) {
+      setTimeout(() => {
+        bookingFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+    }
+  }, [selectedSlot]);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'locations'), (snapshot) => {
@@ -457,6 +466,7 @@ function PublicBooking() {
       {/* Booking Form */}
       {selectedSlot && (
         <motion.div 
+          ref={bookingFormRef}
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           className="max-w-md mx-auto bg-white p-8 rounded-2xl shadow-xl border border-gray-100 space-y-6"
