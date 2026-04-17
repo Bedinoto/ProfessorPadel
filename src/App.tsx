@@ -129,10 +129,10 @@ export default function App() {
       <nav className="bg-white border-b border-gray-200 px-4 py-3 sticky top-0 z-50">
         <div className="max-w-5xl mx-auto flex justify-between items-center">
           <div 
-            className="flex items-center gap-2 cursor-pointer" 
+            className="flex items-center gap-2 cursor-pointer overflow-hidden" 
             onClick={() => setView('public')}
           >
-            <h1 className="font-bold text-xl tracking-tight">🎾 Instrutor <span className="text-green-600">Rafael Vielmo</span></h1>
+            <h1 className="font-bold text-lg md:text-xl tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">🎾 Instrutor <span className="text-green-600">Rafael Vielmo</span></h1>
           </div>
           
           <div className="flex gap-4 items-center">
@@ -433,7 +433,15 @@ function PublicBooking() {
                     {slots.map((slot) => (
                       <button
                         key={slot.id}
-                        onClick={() => setSelectedSlot(slot)}
+                        onClick={() => {
+                          setSelectedSlot(slot);
+                          setTimeout(() => {
+                            const section = document.getElementById('finalize-booking');
+                            if (section) {
+                              section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            }
+                          }, 100);
+                        }}
                         className={`p-3 rounded-xl font-medium transition-all ${
                           selectedSlot?.id === slot.id
                             ? 'bg-green-600 text-white ring-2 ring-green-200'
@@ -466,6 +474,7 @@ function PublicBooking() {
       {/* Booking Form */}
       {selectedSlot && (
         <motion.div 
+          id="finalize-booking"
           ref={bookingFormRef}
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -954,34 +963,34 @@ function AdminDashboard({ user }: { user: any }) {
           <p className="text-gray-500">Gerencie seus horários, alunos e finanças.</p>
         </div>
         
-        <div className="flex flex-wrap bg-white p-1 rounded-xl border border-gray-200 shadow-sm">
+        <div className="flex bg-white p-1 rounded-xl border border-gray-200 shadow-sm overflow-x-auto scrollbar-hide">
           <button 
             onClick={() => setTab('schedule')}
-            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${tab === 'schedule' ? 'bg-green-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-700'}`}
+            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${tab === 'schedule' ? 'bg-green-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-700'}`}
           >
             Agenda
           </button>
           <button 
             onClick={() => setTab('locations')}
-            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${tab === 'locations' ? 'bg-green-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-700'}`}
+            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${tab === 'locations' ? 'bg-green-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-700'}`}
           >
             Locais
           </button>
           <button 
             onClick={() => setTab('bookings')}
-            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${tab === 'bookings' ? 'bg-green-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-700'}`}
+            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${tab === 'bookings' ? 'bg-green-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-700'}`}
           >
             Alunos
           </button>
           <button 
             onClick={() => setTab('finance')}
-            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${tab === 'finance' ? 'bg-green-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-700'}`}
+            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${tab === 'finance' ? 'bg-green-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-700'}`}
           >
             Financeiro
           </button>
           <button 
             onClick={() => setTab('settings')}
-            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${tab === 'settings' ? 'bg-green-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-700'}`}
+            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${tab === 'settings' ? 'bg-green-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-700'}`}
           >
             <SettingsIcon size={16} />
           </button>
@@ -1010,48 +1019,39 @@ function AdminDashboard({ user }: { user: any }) {
             animate={{ opacity: 1, y: 0 }}
             className="space-y-4"
           >
-            <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <h3 className="font-bold text-lg flex items-center gap-2">
-                <Users size={20} className="text-green-600" />
-                Controle de Alunos
-              </h3>
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-lg flex items-center gap-2">
+                  <Users size={20} className="text-green-600" />
+                  Controle de Alunos
+                </h3>
+              </div>
               
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase">Início:</span>
+              <div className="grid grid-cols-2 lg:flex lg:flex-wrap items-end gap-3">
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase">Início</span>
                   <input 
                     type="date" 
-                    className="text-xs p-2 bg-gray-50 border-none rounded-lg outline-none focus:ring-1 focus:ring-green-500"
+                    className="w-full text-xs p-2.5 bg-gray-50 border-none rounded-xl outline-none focus:ring-1 focus:ring-green-500"
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
                   />
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase">Fim:</span>
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase">Fim</span>
                   <input 
                     type="date" 
-                    className="text-xs p-2 bg-gray-50 border-none rounded-lg outline-none focus:ring-1 focus:ring-green-500"
+                    className="w-full text-xs p-2.5 bg-gray-50 border-none rounded-xl outline-none focus:ring-1 focus:ring-green-500"
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
                   />
                 </div>
 
-                {(startDate || endDate) && (
-                  <button 
-                    onClick={() => { setStartDate(''); setEndDate(''); }} 
-                    className="text-[10px] text-red-500 font-bold underline"
-                  >
-                    Limpar Período
-                  </button>
-                )}
-                
-                <div className="h-4 w-px bg-gray-200 hidden md:block mx-1"></div>
-                
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase">Status:</span>
+                <div className="space-y-1 col-span-1 lg:col-span-1">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase">Status</span>
                   <select 
-                    className="text-xs p-2 bg-gray-50 border-none rounded-lg outline-none focus:ring-1 focus:ring-green-500"
+                    className="w-full text-xs p-2.5 bg-gray-50 border-none rounded-xl outline-none focus:ring-1 focus:ring-green-500"
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value as any)}
                   >
@@ -1060,10 +1060,146 @@ function AdminDashboard({ user }: { user: any }) {
                     <option value="pending">Pendentes</option>
                   </select>
                 </div>
+
+                <div className="flex items-center justify-center col-span-1 lg:col-span-1 h-[37px]">
+                  {(startDate || endDate || statusFilter !== 'all') && (
+                    <button 
+                      onClick={() => { setStartDate(''); setEndDate(''); setStatusFilter('all'); }} 
+                      className="text-[10px] text-red-500 font-bold hover:bg-red-50 px-3 py-2 rounded-lg transition-colors"
+                    >
+                      Limpar
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
-            <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="space-y-4">
+              {/* Mobile Card List View */}
+              <div className="lg:hidden space-y-4">
+                {bookings
+                  .filter(booking => {
+                    const matchesStart = startDate ? booking.date >= startDate : true;
+                    const matchesEnd = endDate ? booking.date <= endDate : true;
+                    const matchesStatus = statusFilter === 'all' 
+                      ? true 
+                      : statusFilter === 'paid' ? booking.paid : !booking.paid;
+                    return matchesStart && matchesEnd && matchesStatus;
+                  })
+                  .map(booking => (
+                    <div key={booking.id} className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm space-y-4">
+                      <div className="flex justify-between items-start">
+                        <div className="flex gap-4">
+                          <div className="bg-green-50 text-green-600 p-3 rounded-2xl text-center min-w-[55px]">
+                            <div className="text-[10px] uppercase font-bold opacity-60 leading-none">{format(parseISO(booking.date), 'MMM', { locale: ptBR })}</div>
+                            <div className="text-xl font-bold leading-none mt-1">{format(parseISO(booking.date), 'dd')}</div>
+                            <div className="text-[10px] font-bold mt-1 text-gray-400">{booking.time}</div>
+                          </div>
+                          <div>
+                            <div className="font-bold text-gray-900 leading-tight">{booking.student_name}</div>
+                            <div className="text-xs text-gray-500 mt-1">{booking.location_name}</div>
+                          </div>
+                        </div>
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${booking.paid ? 'bg-green-100 text-green-600' : 'bg-yellow-100 text-yellow-600'}`}>
+                          {booking.paid ? 'Pago' : 'Pendente'}
+                        </span>
+                      </div>
+                      
+                      <div className="flex items-center justify-between py-3 border-y border-gray-50">
+                        <div>
+                          <div className="text-[10px] font-bold text-gray-400 uppercase">Tipo</div>
+                          <div className="text-xs font-semibold">{booking.booking_type}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-[10px] font-bold text-gray-400 uppercase">Valor</div>
+                          <div className="text-sm font-bold text-green-600">R$ {booking.price.toFixed(2)}</div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex gap-1.5">
+                          <button 
+                            onClick={() => setEditingBooking(booking)}
+                            className="p-3 bg-gray-50 text-gray-500 rounded-xl transition-all border border-transparent"
+                          >
+                            <Edit2 size={18} />
+                          </button>
+                          <button 
+                            disabled={syncingIds.has(booking.id)}
+                            onClick={() => handleCalendarSync(booking)}
+                            className={`p-3 rounded-xl transition-all border border-transparent ${syncingIds.has(booking.id) ? 'opacity-50' : booking.google_synced ? 'bg-green-100 text-green-600' : 'bg-red-50 text-red-500'}`}
+                          >
+                            {syncingIds.has(booking.id) ? (
+                              <Loader2 size={18} className="animate-spin" />
+                            ) : (
+                              <CalendarIcon size={18} />
+                            )}
+                          </button>
+                        </div>
+                        
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => {
+                              setConfirmConfig({
+                                isOpen: true,
+                                title: booking.paid ? "Alterar para Pendente?" : "Confirmar Pagamento?",
+                                message: `Deseja marcar esta aula como ${booking.paid ? 'pendente' : 'paga'}?`,
+                                type: booking.paid ? 'danger' : 'success',
+                                confirmText: 'Confirmar',
+                                onConfirm: async () => {
+                                  try {
+                                    await updateDoc(doc(db, 'bookings', booking.id), { paid: !booking.paid });
+                                  } catch (error) {
+                                    handleFirestoreError(error, OperationType.UPDATE, 'bookings');
+                                  }
+                                }
+                              });
+                            }}
+                            className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm ${booking.paid ? 'bg-gray-100 text-gray-500' : 'bg-green-600 text-white shadow-green-100'}`}
+                          >
+                            {booking.paid ? 'Recomeçar' : 'Pagar'}
+                          </button>
+                          <button 
+                            onClick={() => {
+                              setConfirmConfig({
+                                isOpen: true,
+                                title: "Excluir?",
+                                message: `Remover reserva de ${booking.student_name}?`,
+                                type: 'danger',
+                                confirmText: 'Excluir',
+                                onConfirm: async () => {
+                                  try {
+                                    if (booking.google_event_id) handleDeleteGoogleEvent(booking);
+                                    await updateDoc(doc(db, 'slots', booking.slot_id), { is_available: true });
+                                    await deleteDoc(doc(db, 'bookings', booking.id));
+                                  } catch (error) {
+                                    handleFirestoreError(error, OperationType.DELETE, 'bookings');
+                                  }
+                                }
+                              });
+                            }}
+                            className="p-3 bg-red-50 text-red-500 rounded-xl"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                {bookings.filter(b => {
+                  const sm = startDate ? b.date >= startDate : true;
+                  const em = endDate ? b.date <= endDate : true;
+                  const stm = statusFilter === 'all' ? true : statusFilter === 'paid' ? b.paid : !b.paid;
+                  return sm && em && stm;
+                }).length === 0 && (
+                  <div className="bg-white py-14 text-center text-gray-400 rounded-3xl border border-dashed border-gray-100">
+                    Nenhum aluno encontrado.
+                  </div>
+                )}
+              </div>
+
+              {/* Desktop Table View */}
+              <div className="hidden lg:block bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
@@ -1190,7 +1326,8 @@ function AdminDashboard({ user }: { user: any }) {
               </table>
             </div>
           </div>
-        </motion.div>
+        </div>
+      </motion.div>
       )}
         {tab === 'finance' && finance && (
           <motion.div 
@@ -1646,7 +1783,7 @@ function ScheduleManager({ user, setToast }: { user: any, setToast: (t: any) => 
       }
 
       const bookingLink = `${window.location.origin}/?loc=${selectedLocation.id}`;
-      report += `🔗 Agende aqui: ${bookingLink}`;
+      report += `📅 Hora de agendar sua aula!\n\nEscolha seu melhor horário diretamente pelo link:\n👉 ${bookingLink}\n\nOu, se preferir, me envie uma mensagem aqui no WhatsApp. Vamos evoluir juntos!`;
 
       await navigator.clipboard.writeText(report.trim());
       setToast({ message: "Agenda da semana copiada!", type: 'success' });
