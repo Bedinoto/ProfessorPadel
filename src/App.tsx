@@ -767,9 +767,11 @@ function AdminDashboard({ user }: { user: any }) {
       
       const response = await fetch(apiUrl);
       
+      let debugResponse = "";
       if (response.ok) {
         const result = await response.json();
         console.log('Resposta completa do Proxy:', result);
+        debugResponse = result.raw || JSON.stringify(result);
 
         const calendarId = result.id || (result.raw && result.raw.length > 10 ? result.raw : null);
         console.log('ID Detectado:', calendarId);
@@ -781,15 +783,6 @@ function AdminDashboard({ user }: { user: any }) {
           });
           setToast({ message: "Sincronizado e ID salvo!", type: 'success' });
           return;
-        } else {
-           // Se não capturou ID mas o proxy respondeu, mostramos o que veio para análise
-           const debugMsg = result.raw || JSON.stringify(result);
-           console.warn('Conteúdo recebido sem ID válido:', debugMsg);
-           
-           // Se o Google devolveu algo (mesmo que não seja ID), vamos tentar mostrar
-           if (debugMsg && debugMsg !== '{}') {
-             setToast({ message: `Recebido do Google: ${debugMsg.substring(0, 50)}...`, type: 'info' });
-           }
         }
       }
       
@@ -811,7 +804,13 @@ function AdminDashboard({ user }: { user: any }) {
       await updateDoc(doc(db, 'bookings', booking.id), {
         google_synced: true
       });
-      setToast({ message: "Sincronizado! (Verifique ID na agenda)", type: 'success' });
+
+      // Se tivermos uma resposta do script mas sem ID, mostramos parte dela no alerta
+      const displayMsg = debugResponse 
+        ? `Sincronizado! (Verifique ID) - Google retornou: ${debugResponse.substring(0, 40)}...`
+        : "Sincronizado! (Verifique ID na agenda)";
+
+      setToast({ message: displayMsg, type: 'success' });
 
     } catch (error: any) {
       console.error('Erro na sincronização:', error);
@@ -1059,11 +1058,13 @@ function AdminDashboard({ user }: { user: any }) {
       <AnimatePresence>
         {toast && (
           <motion.div
-            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            initial={{ opacity: 0, y: -50, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 50, scale: 0.9 }}
-            className={`fixed bottom-8 left-1/2 -translate-x-1/2 px-6 py-3 rounded-2xl shadow-2xl z-[200] flex items-center gap-3 border transition-colors ${
-              toast.type === 'success' ? 'bg-green-600 border-green-500 text-white' : 'bg-red-600 border-red-500 text-white'
+            exit={{ opacity: 0, y: -50, scale: 0.9 }}
+            className={`fixed top-8 left-1/2 -translate-x-1/2 px-6 py-3 rounded-2xl shadow-2xl z-[200] flex items-center gap-3 border transition-colors ${
+              toast.type === 'success' ? 'bg-green-600 border-green-500 text-white' : 
+              toast.type === 'info' ? 'bg-blue-600 border-blue-500 text-white' :
+              'bg-red-600 border-red-500 text-white'
             }`}
           >
             {toast.type === 'success' ? <CheckCircle size={20} /> : <XCircle size={20} />}
