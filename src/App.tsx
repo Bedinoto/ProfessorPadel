@@ -212,6 +212,17 @@ function PublicBooking() {
   }, []);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const locId = params.get('loc');
+    if (locId && locations.length > 0) {
+      const matched = locations.find(l => l.id === locId);
+      if (matched) {
+        setSelectedLocation(matched);
+      }
+    }
+  }, [locations]);
+
+  useEffect(() => {
     if (selectedLocation) {
       const q = query(
         collection(db, 'slots'), 
@@ -1623,6 +1634,9 @@ function ScheduleManager({ user, setToast }: { user: any, setToast: (t: any) => 
         }
         report += '\n';
       }
+
+      const bookingLink = `${window.location.origin}/?loc=${selectedLocation.id}`;
+      report += `🔗 Agende aqui: ${bookingLink}`;
 
       await navigator.clipboard.writeText(report.trim());
       setToast({ message: "Agenda da semana copiada!", type: 'success' });
