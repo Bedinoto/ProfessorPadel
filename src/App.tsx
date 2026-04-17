@@ -1647,6 +1647,11 @@ function SettingsManager({ user }: { user: any }) {
                 className="w-full pl-10 pr-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none"
                 value={googleScriptUrl}
                 onChange={e => setGoogleScriptUrl(e.target.value)}
+                onBlur={() => {
+                  if (googleScriptUrl && !googleScriptUrl.startsWith('http')) {
+                    setGoogleScriptUrl(`https://${googleScriptUrl}`);
+                  }
+                }}
               />
             </div>
             <p className="text-[10px] text-gray-400">URL do Web App implantado no Google Apps Script.</p>

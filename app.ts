@@ -59,11 +59,21 @@ async function startServer() {
     const { scriptUrl, ...params } = req.query;
     debugLog(`Sync Request Received - scriptUrl: ${scriptUrl ? 'present' : 'missing'}`);
     debugLog(`Params: ${JSON.stringify(params)}`);
+
+    let scriptUrlString = (scriptUrl || "") as string;
     
-    if (!scriptUrl) return res.status(400).json({ error: "Script URL is required" });
+    // Smart Fix: Se o usuário esquecer o protocolo ou a URL for incompleta
+    if (scriptUrlString && !scriptUrlString.startsWith('http')) {
+      scriptUrlString = `https://${scriptUrlString}`;
+      debugLog(`Auto-prepending https:// to scriptUrl`);
+    }
+
+    if (!scriptUrlString || scriptUrlString.length < 10) {
+       return res.status(400).json({ error: "URL do Script inválida ou ausente nas configurações." });
+    }
 
     try {
-      const url = new URL(scriptUrl as string);
+      const url = new URL(scriptUrlString);
       Object.entries(params).forEach(([key, value]) => {
         if (value) url.searchParams.append(key, value as string);
       });
