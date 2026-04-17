@@ -106,24 +106,27 @@ async function startServer() {
         return res.status(500).json({ error: "O Script do Google retornou HTML em vez do ID. Verifique a publicação do Script." });
       }
 
-    try {
-      const json = JSON.parse(text);
-      debugLog(`Parsed JSON: ${JSON.stringify(json)}`);
-      res.json(json);
-    } catch {
-      // Scanner ainda mais potente para IDs de agenda
-      // IDs do Google geralmente terminam em @google.com ou são alfanuméricos longos
-      const idMatch = text.match(/([a-zA-Z0-9\-_.~%]{15,}(?:@google\.com)?)/i);
-      let extractedId = text.trim();
-      
-      if (idMatch && idMatch[1]) {
-         extractedId = idMatch[1];
-         debugLog(`ID detectado no texto bruto: ${extractedId}`);
-      } else {
-         debugLog(`Nenhum padrão de ID encontrado no texto. Retornando texto bruto: ${extractedId}`);
+      try {
+        const json = JSON.parse(text);
+        debugLog(`Parsed JSON: ${JSON.stringify(json)}`);
+        res.json({ ...json, raw: text }); // Envia o JSON e também o texto bruto por segurança
+      } catch {
+        // Scanner para IDs de agenda
+        const idMatch = text.match(/([a-zA-Z0-9\-_.~%]{15,}(?:@google\.com)?)/i);
+        let extractedId = "";
+        
+        if (idMatch && idMatch[1]) {
+           extractedId = idMatch[1];
+           debugLog(`ID detectado no texto bruto: ${extractedId}`);
+        }
+        
+        // Retorna tudo para debug no frontend
+        res.json({ 
+          message: "Success (Text Mode)", 
+          id: extractedId, 
+          raw: text 
+        });
       }
-      res.json({ message: "Success", raw: extractedId });
-    }
     } catch (error: any) {
       debugLog(`CRITICAL PROXY ERROR: ${error.message}`);
       res.status(500).json({ error: `Falha técnica no Proxy: ${error.message}` });

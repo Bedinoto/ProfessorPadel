@@ -769,9 +769,10 @@ function AdminDashboard({ user }: { user: any }) {
       
       if (response.ok) {
         const result = await response.json();
-        console.log('Resposta do Proxy:', result);
+        console.log('Resposta completa do Proxy:', result);
 
         const calendarId = result.id || (result.raw && result.raw.length > 10 ? result.raw : null);
+        console.log('ID Detectado:', calendarId);
         
         if (calendarId) {
           await updateDoc(doc(db, 'bookings', booking.id), {
@@ -780,8 +781,15 @@ function AdminDashboard({ user }: { user: any }) {
           });
           setToast({ message: "Sincronizado e ID salvo!", type: 'success' });
           return;
-        } else if (result.error) {
-           setToast({ message: `Script aviso: ${result.error}`, type: 'error' });
+        } else {
+           // Se não capturou ID mas o proxy respondeu, mostramos o que veio para análise
+           const debugMsg = result.raw || JSON.stringify(result);
+           console.warn('Conteúdo recebido sem ID válido:', debugMsg);
+           
+           // Se o Google devolveu algo (mesmo que não seja ID), vamos tentar mostrar
+           if (debugMsg && debugMsg !== '{}') {
+             setToast({ message: `Recebido do Google: ${debugMsg.substring(0, 50)}...`, type: 'info' });
+           }
         }
       }
       
