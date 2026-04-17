@@ -751,67 +751,76 @@ function AdminDashboard({ user }: { user: any }) {
     setSyncingIds(prev => new Set(prev).add(booking.id));
     
     try {
-      // CONSTRUÇÃO DA URL DIRETA PARA O GOOGLE (Evita 404 de Proxy)
+      // CONSTRUÇÃO DA URL DIRETA PARA O GOOGLE
       const googleUrl = new URL(appSettings.google_script_url);
-      googleUrl.searchParams.append('titulo', `Aula: ${booking.student_name}`);
-      googleUrl.searchParams.append('inicio', `${booking.date} ${booking.time}`);
-      googleUrl.searchParams.append('fim', `${booking.date} ${booking.time}`);
-      googleUrl.searchParams.append('descricao', `Tipo: ${booking.booking_type}\nTelefone: ${booking.student_phone}`);
-      googleUrl.searchParams.append('local', booking.location_name);
-      googleUrl.searchParams.append('id_evento', booking.google_event_id || '');
-      googleUrl.searchParams.append('id_sistema', booking.id);
-
-      console.log('Sincronizando diretamente com Google...');
+      const params = {
+        titulo: `Aula: ${booking.student_name}`,
+        inicio: `${booking.date} ${booking.time}`,
+        fim: `${booking.date} ${booking.time}`,
+        descricao: `Tipo: ${booking.booking_type}\nTelefone: ${booking.student_phone}`,
+        local: booking.location_name,
+        id_evento: booking.google_event_id || '',
+        id_sistema: booking.id
+      };
       
-      const response = await fetch(googleUrl.toString(), {
-        method: 'GET',
-        mode: 'cors', // Google Apps Script suporta CORS em GET
-        redirect: 'follow'
-      });
-      
-      let debugResponse = "";
-      if (response.ok) {
-        const text = await response.text();
-        debugResponse = text;
-        console.log('Resposta direta do Google:', text);
+      Object.entries(params).forEach(([key, value]) => googleUrl.searchParams.append(key, value));
 
-        // Tenta extrair ID do JSON ou Texto
-        let calendarId = null;
-        try {
-          const json = JSON.parse(text);
-          calendarId = json.id;
-        } catch {
-          // Scanner de ID se não for JSON
-          const idMatch = text.match(/([a-zA-Z0-9\-_.~%]{15,}(?:@google\.com)?)/i);
-          if (idMatch) calendarId = idMatch[1];
-        }
+      console.log('Sincronizando via JSONP (Universal)...');
+      
+      // TÉCNICA JSONP: Única que funciona 100% em sites estáticos (Netlify) sem dar erro de CORS
+      const callbackName = `google_cb_${Date.now()}`;
+      
+      const jsonpPromise = new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Timeout Google')), 8000);
         
-        if (calendarId) {
+        (window as any)[callbackName] = (data: any) => {
+          clearTimeout(timeout);
+          console.log('Resposta JSONP recebida:', data);
+          resolve(data);
+        };
+
+        const script = document.createElement('script');
+        script.src = `${googleUrl.toString()}&callback=${callbackName}`;
+        script.async = true;
+        script.onerror = () => {
+          clearTimeout(timeout);
+          reject(new Error('Erro ao carregar script do Google'));
+        };
+        document.body.appendChild(script);
+        
+        // Limpeza do script após execução ou erro
+        const cleanup = () => {
+          if (document.body.contains(script)) document.body.removeChild(script);
+          delete (window as any)[callbackName];
+        };
+        
+        setTimeout(cleanup, 10000);
+      });
+
+      try {
+        const result: any = await jsonpPromise;
+        
+        if (result && result.status === "success" && result.id) {
           await updateDoc(doc(db, 'bookings', booking.id), {
-            google_event_id: calendarId,
+            google_event_id: result.id,
             google_synced: true
           });
           setToast({ message: "Sincronizado e ID salvo!", type: 'success' });
           return;
         }
-      } else {
-        debugResponse = `Erro HTTP ${response.status}`;
+      } catch (err) {
+        console.warn('JSONP falhou, tentando fallback de imagem...', err);
+        // Fallback da Imagem (Funciona para criar o evento, mas não pega o ID)
+        const img = new Image();
+        img.src = googleUrl.toString();
+        
+        await updateDoc(doc(db, 'bookings', booking.id), {
+          google_synced: true
+        });
+        setToast({ message: "Sincronizado! (Verifique ID na agenda)", type: 'success' });
       }
-      
-      // Fallback da Imagem (Para casos de redirecionamento que o fetch as vezes barra)
-      const img = new Image();
-      img.src = `${appSettings.google_script_url}?${googleUrl.searchParams.toString()}`;
-      
-      await updateDoc(doc(db, 'bookings', booking.id), {
-        google_synced: true
-      });
 
-      // Se tivermos uma resposta do script mas sem ID, mostramos parte dela no alerta
-      const displayMsg = debugResponse 
-        ? `Sincronizado! (Verifique ID) - Google retornou: ${debugResponse.substring(0, 40)}...`
-        : "Sincronizado! (Verifique ID na agenda)";
-
-      setToast({ message: displayMsg, type: 'success' });
+      setToast({ message: "Sincronizado! (Verifique ID na agenda)", type: 'success' });
 
     } catch (error: any) {
       console.error('Erro na sincronização:', error);
