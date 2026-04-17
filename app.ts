@@ -55,8 +55,10 @@ async function startServer() {
 
   // --- GOOGLE CALENDAR PROXY ---
   app.get("/api/sync-calendar", async (req, res) => {
+    debugLog("--- CALENDAR PROXY ROUTE HIT ---");
     const { scriptUrl, ...params } = req.query;
     debugLog(`Sync Request Received - scriptUrl: ${scriptUrl ? 'present' : 'missing'}`);
+    debugLog(`Params: ${JSON.stringify(params)}`);
     
     if (!scriptUrl) return res.status(400).json({ error: "Script URL is required" });
 

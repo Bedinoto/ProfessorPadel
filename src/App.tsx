@@ -754,11 +754,13 @@ function AdminDashboard({ user }: { user: any }) {
         id_sistema: booking.id
       });
 
-      const response = await fetch(`/api/sync-calendar?${params.toString()}`);
+      const apiUrl = `/api/sync-calendar?${params.toString()}`;
+      console.log('Syncing via proxy:', apiUrl);
+      const response = await fetch(apiUrl);
       
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Servidor retornou erro (${response.status}): ${errorText}`);
+        throw new Error(`Servidor (Proxy) retornou erro ${response.status}: ${errorText || 'Sem detalhes'}`);
       }
 
       const result = await response.json();
