@@ -22,6 +22,7 @@ export interface Booking {
   date: string;
   time: string;
   location_name: string;
+  google_event_id?: string;
 }
 
 export interface FinanceSummary {
@@ -34,4 +35,5 @@ export interface FinanceSummary {
 export interface AppSettings {
   id: string;
   whatsapp_number: string;
+  google_script_url: string;
 }

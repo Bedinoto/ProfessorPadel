@@ -688,6 +688,17 @@ function AdminDashboard({ user }: { user: any }) {
   const [finance, setFinance] = useState<FinanceSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
+  const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
+
+  useEffect(() => {
+    // Fetch app settings
+    const unsubscribe = onSnapshot(doc(db, 'settings', 'general'), (snapshot) => {
+      if (snapshot.exists()) {
+        setAppSettings({ id: snapshot.id, ...snapshot.data() } as AppSettings);
+      }
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'settings'));
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     let unsubscribe: () => void;
@@ -836,6 +847,35 @@ function AdminDashboard({ user }: { user: any }) {
                           </button>
                           <button 
                             onClick={async () => {
+                              if (!appSettings?.google_script_url) {
+                                alert('Por favor, configure a URL do Script do Google nas configurações.');
+                                return;
+                              }
+                              try {
+                                const baseUrl = appSettings.google_script_url;
+                                const params = new URLSearchParams({
+                                  titulo: `Aula: ${booking.student_name}`,
+                                  inicio: `${booking.date} ${booking.time}`,
+                                  fim: `${booking.date} ${booking.time}`, // Simplificado para mesma hora, ajuste se necessário
+                                  descricao: `Tipo: ${booking.booking_type}\nTelefone: ${booking.student_phone}`,
+                                  local: booking.location_name,
+                                  id_evento: booking.google_event_id || ''
+                                });
+                                
+                                // O Google Script com doGet retorna via redirecionamento, 
+                                // abrir em popup ou nova aba é mais seguro que fetch direto devido a CORS em WebApps
+                                window.open(`${baseUrl}?${params.toString()}`, '_blank');
+                              } catch (error) {
+                                console.error('Erro ao enviar para Google Calendar:', error);
+                              }
+                            }}
+                            className="p-2 text-gray-400 hover:text-blue-600 transition-colors"
+                            title="Enviar para Google Calendar"
+                          >
+                            <CalendarIcon size={18} />
+                          </button>
+                          <button 
+                            onClick={async () => {
                               try {
                                 await updateDoc(doc(db, 'bookings', booking.id), {
                                   paid: !booking.paid
@@ -950,6 +990,7 @@ function EditBookingModal({ booking, onClose }: { booking: Booking, onClose: () 
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedSlotId, setSelectedSlotId] = useState(booking.slot_id);
   const [bookingType, setBookingType] = useState(booking.booking_type);
+  const [googleEventId, setGoogleEventId] = useState(booking.google_event_id || '');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -977,6 +1018,7 @@ function EditBookingModal({ booking, onClose }: { booking: Booking, onClose: () 
       const updates: any = {
         booking_type: bookingType,
         price: selectedType?.price || 0,
+        google_event_id: googleEventId.trim()
       };
 
       if (selectedSlotId !== booking.slot_id) {
@@ -1054,6 +1096,21 @@ function EditBookingModal({ booking, onClose }: { booking: Booking, onClose: () 
                 {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
               </select>
             </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-gray-400 uppercase">Google Event ID (Para alteração na agenda)</label>
+            <div className="relative">
+              <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+              <input 
+                type="text" 
+                placeholder="ID do Evento no Google Calendar"
+                className="w-full pl-10 pr-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none"
+                value={googleEventId}
+                onChange={e => setGoogleEventId(e.target.value)}
+              />
+            </div>
+            <p className="text-[10px] text-gray-400">Preencha este campo caso queira alterar um evento já existente.</p>
           </div>
 
           <div className="space-y-1">
@@ -1450,6 +1507,7 @@ function LocationManager({ user }: { user: any }) {
 
 function SettingsManager({ user }: { user: any }) {
   const [whatsappNumber, setWhatsappNumber] = useState('');
+  const [googleScriptUrl, setGoogleScriptUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
@@ -1458,6 +1516,7 @@ function SettingsManager({ user }: { user: any }) {
       if (snapshot.exists()) {
         const data = snapshot.data() as any;
         setWhatsappNumber(data.whatsapp_number || '');
+        setGoogleScriptUrl(data.google_script_url || '');
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'settings'));
     return () => unsubscribe();
@@ -1468,7 +1527,8 @@ function SettingsManager({ user }: { user: any }) {
     setLoading(true);
     try {
       await setDoc(doc(db, 'settings', 'general'), {
-        whatsapp_number: whatsappNumber.replace(/\D/g, '')
+        whatsapp_number: whatsappNumber.replace(/\D/g, ''),
+        google_script_url: googleScriptUrl.trim()
       });
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 3000);
@@ -1502,6 +1562,21 @@ function SettingsManager({ user }: { user: any }) {
               />
             </div>
             <p className="text-[10px] text-gray-400">Insira o número completo com DDI (Ex: 55 para Brasil), DDD e o número.</p>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-gray-400 uppercase">Google Scripts URL (Integração Agenda)</label>
+            <div className="relative">
+              <LayoutDashboard className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+              <input 
+                type="url"
+                placeholder="https://script.google.com/macros/s/.../exec"
+                className="w-full pl-10 pr-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none"
+                value={googleScriptUrl}
+                onChange={e => setGoogleScriptUrl(e.target.value)}
+              />
+            </div>
+            <p className="text-[10px] text-gray-400">URL do Web App implantado no Google Apps Script.</p>
           </div>
 
           <div className="flex justify-end">
