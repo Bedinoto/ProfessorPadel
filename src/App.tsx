@@ -24,9 +24,13 @@ import {
   TrendingUp,
   MapPin,
   Settings as SettingsIcon,
-  Edit2
+  Edit2,
+  Share2,
+  FileText,
+  Copy,
+  ExternalLink
 } from 'lucide-react';
-import { format, addDays, startOfToday, isSameDay, parseISO } from 'date-fns';
+import { format, addDays, startOfToday, isSameDay, parseISO, startOfWeek, endOfWeek } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Slot, Booking, FinanceSummary, Location, AppSettings } from './types';
 import { 
@@ -98,8 +102,10 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setIsAuthReady(true);
-      if (currentUser) {
-        setView('admin');
+      
+      // Hidden access via /admin or if already authenticated
+      if (currentUser || window.location.pathname === '/admin') {
+        setView(currentUser ? 'admin' : 'login');
       }
     });
     return () => unsubscribe();
@@ -130,14 +136,6 @@ export default function App() {
           </div>
           
           <div className="flex gap-4 items-center">
-            {view === 'public' && (
-              <button 
-                onClick={() => setView('login')}
-                className="text-sm font-medium text-gray-600 hover:text-green-600 transition-colors"
-              >
-                Área do Professor
-              </button>
-            )}
             {user && (
               <div className="flex items-center gap-4">
                 <button 
@@ -684,6 +682,62 @@ function Login({ onLogin }: { onLogin: () => void }) {
   );
 }
 
+function ConfirmModal({ 
+  isOpen, 
+  onClose, 
+  onConfirm, 
+  title, 
+  message, 
+  confirmText = "Confirmar", 
+  type = 'danger' 
+}: { 
+  isOpen: boolean, 
+  onClose: () => void, 
+  onConfirm: () => void, 
+  title: string, 
+  message: string, 
+  confirmText?: string,
+  type?: 'danger' | 'success'
+}) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl"
+      >
+        <div className="p-6">
+          <h3 className="text-xl font-bold text-gray-900 mb-2">{title}</h3>
+          <p className="text-gray-500 text-sm leading-relaxed">{message}</p>
+        </div>
+        <div className="p-4 bg-gray-50 flex gap-3">
+          <button 
+            onClick={onClose}
+            className="flex-1 py-3 rounded-xl font-bold text-gray-600 hover:bg-gray-100 transition-all"
+          >
+            Cancelar
+          </button>
+          <button 
+            onClick={() => {
+              onConfirm();
+              onClose();
+            }}
+            className={`flex-1 py-3 rounded-xl font-bold text-white shadow-lg transition-all ${
+              type === 'danger' 
+                ? 'bg-red-500 shadow-red-100 hover:bg-red-600' 
+                : 'bg-green-600 shadow-green-100 hover:bg-green-700'
+            }`}
+          >
+            {confirmText}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 function AdminDashboard({ user }: { user: any }) {
   const [tab, setTab] = useState<'schedule' | 'bookings' | 'finance' | 'locations' | 'settings'>('schedule');
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -693,6 +747,24 @@ function AdminDashboard({ user }: { user: any }) {
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
   const [syncingIds, setSyncingIds] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'paid' | 'pending'>('all');
+  const [confirmConfig, setConfirmConfig] = useState<{
+    isOpen: boolean,
+    title: string,
+    message: string,
+    onConfirm: () => void,
+    type: 'danger' | 'success',
+    confirmText: string
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+    type: 'danger',
+    confirmText: 'Confirmar'
+  });
 
   useEffect(() => {
     if (toast) {
@@ -835,6 +907,24 @@ function AdminDashboard({ user }: { user: any }) {
     }
   };
 
+  const handleDeleteGoogleEvent = async (booking: Booking) => {
+    if (!appSettings?.google_script_url || !booking.google_event_id) return;
+
+    try {
+      const googleUrl = new URL(appSettings.google_script_url);
+      googleUrl.searchParams.append('action', 'delete');
+      googleUrl.searchParams.append('id_evento', booking.google_event_id);
+      
+      const script = document.createElement('script');
+      script.src = googleUrl.toString();
+      script.async = true;
+      document.head.appendChild(script);
+      setTimeout(() => { if (document.head.contains(script)) document.head.removeChild(script); }, 10000);
+    } catch (e) {
+      console.error('Erro ao deletar do Google:', e);
+    }
+  };
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -880,7 +970,7 @@ function AdminDashboard({ user }: { user: any }) {
       <AnimatePresence mode="wait">
         {tab === 'schedule' && (
           <motion.div key="schedule" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <ScheduleManager user={user} />
+            <ScheduleManager user={user} setToast={setToast} />
           </motion.div>
         )}
         {tab === 'locations' && (
@@ -897,29 +987,86 @@ function AdminDashboard({ user }: { user: any }) {
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden"
+            className="space-y-4"
           >
-            <div className="p-6 border-b border-gray-50 flex justify-between items-center">
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
               <h3 className="font-bold text-lg flex items-center gap-2">
                 <Users size={20} className="text-green-600" />
                 Controle de Alunos
               </h3>
+              
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase">Início:</span>
+                  <input 
+                    type="date" 
+                    className="text-xs p-2 bg-gray-50 border-none rounded-lg outline-none focus:ring-1 focus:ring-green-500"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase">Fim:</span>
+                  <input 
+                    type="date" 
+                    className="text-xs p-2 bg-gray-50 border-none rounded-lg outline-none focus:ring-1 focus:ring-green-500"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                  />
+                </div>
+
+                {(startDate || endDate) && (
+                  <button 
+                    onClick={() => { setStartDate(''); setEndDate(''); }} 
+                    className="text-[10px] text-red-500 font-bold underline"
+                  >
+                    Limpar Período
+                  </button>
+                )}
+                
+                <div className="h-4 w-px bg-gray-200 hidden md:block mx-1"></div>
+                
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase">Status:</span>
+                  <select 
+                    className="text-xs p-2 bg-gray-50 border-none rounded-lg outline-none focus:ring-1 focus:ring-green-500"
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as any)}
+                  >
+                    <option value="all">Todos</option>
+                    <option value="paid">Pagos</option>
+                    <option value="pending">Pendentes</option>
+                  </select>
+                </div>
+              </div>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-gray-50 text-[10px] uppercase font-bold text-gray-400 tracking-wider">
-                    <th className="px-6 py-4">Data/Hora</th>
-                    <th className="px-6 py-4">Local</th>
-                    <th className="px-6 py-4">Aluno</th>
-                    <th className="px-6 py-4">Tipo</th>
-                    <th className="px-6 py-4">Status</th>
-                    <th className="px-6 py-4">Ações</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {bookings.map(booking => (
-                    <tr key={booking.id} className="hover:bg-gray-50 transition-colors">
+
+            <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-gray-50 text-[10px] uppercase font-bold text-gray-400 tracking-wider">
+                      <th className="px-6 py-4">Data/Hora</th>
+                      <th className="px-6 py-4">Local</th>
+                      <th className="px-6 py-4">Aluno</th>
+                      <th className="px-6 py-4">Tipo</th>
+                      <th className="px-6 py-4">Status</th>
+                      <th className="px-6 py-4">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {bookings
+                      .filter(booking => {
+                        const matchesStart = startDate ? booking.date >= startDate : true;
+                        const matchesEnd = endDate ? booking.date <= endDate : true;
+                        const matchesStatus = statusFilter === 'all' 
+                          ? true 
+                          : statusFilter === 'paid' ? booking.paid : !booking.paid;
+                        return matchesStart && matchesEnd && matchesStatus;
+                      })
+                      .map(booking => (
+                        <tr key={booking.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4">
                         <div className="font-bold text-sm">{format(parseISO(booking.date), 'dd/MM')}</div>
                         <div className="text-xs text-gray-400">{booking.time}</div>
@@ -960,14 +1107,23 @@ function AdminDashboard({ user }: { user: any }) {
                             )}
                           </button>
                           <button 
-                            onClick={async () => {
-                              try {
-                                await updateDoc(doc(db, 'bookings', booking.id), {
-                                  paid: !booking.paid
-                                });
-                              } catch (error) {
-                                handleFirestoreError(error, OperationType.UPDATE, 'bookings');
-                              }
+                            onClick={() => {
+                              setConfirmConfig({
+                                isOpen: true,
+                                title: booking.paid ? "Alterar para Pendente?" : "Confirmar Pagamento?",
+                                message: `Deseja marcar esta aula de R$ ${booking.price.toFixed(2)} como ${booking.paid ? 'pendente' : 'paga'}?`,
+                                type: booking.paid ? 'danger' : 'success',
+                                confirmText: 'Sim, Alterar',
+                                onConfirm: async () => {
+                                  try {
+                                    await updateDoc(doc(db, 'bookings', booking.id), {
+                                      paid: !booking.paid
+                                    });
+                                  } catch (error) {
+                                    handleFirestoreError(error, OperationType.UPDATE, 'bookings');
+                                  }
+                                }
+                              });
                             }}
                             className="p-2 text-gray-400 hover:text-green-600 transition-colors"
                             title={booking.paid ? "Marcar como não pago" : "Marcar como pago"}
@@ -975,15 +1131,26 @@ function AdminDashboard({ user }: { user: any }) {
                             <DollarSign size={18} />
                           </button>
                           <button 
-                            onClick={async () => {
-                              if (confirm('Deseja realmente cancelar esta reserva?')) {
-                                try {
-                                  await updateDoc(doc(db, 'slots', booking.slot_id), { is_available: true });
-                                  await deleteDoc(doc(db, 'bookings', booking.id));
-                                } catch (error) {
-                                  handleFirestoreError(error, OperationType.DELETE, 'bookings');
+                            onClick={() => {
+                              setConfirmConfig({
+                                isOpen: true,
+                                title: "Cancelar Reserva?",
+                                message: `Deseja realmente cancelar a reserva de ${booking.student_name}? O horário voltará a ficar disponível.`,
+                                type: 'danger',
+                                confirmText: 'Sim, Cancelar',
+                                onConfirm: async () => {
+                                  try {
+                                    // Se tem ID do Google, tenta deletar da agenda também
+                                    if (booking.google_event_id) {
+                                      handleDeleteGoogleEvent(booking);
+                                    }
+                                    await updateDoc(doc(db, 'slots', booking.slot_id), { is_available: true });
+                                    await deleteDoc(doc(db, 'bookings', booking.id));
+                                  } catch (error) {
+                                    handleFirestoreError(error, OperationType.DELETE, 'bookings');
+                                  }
                                 }
-                              }
+                              });
                             }}
                             className="p-2 text-gray-400 hover:text-red-600 transition-colors"
                           >
@@ -1001,8 +1168,9 @@ function AdminDashboard({ user }: { user: any }) {
                 </tbody>
               </table>
             </div>
-          </motion.div>
-        )}
+          </div>
+        </motion.div>
+      )}
         {tab === 'finance' && finance && (
           <motion.div 
             key="finance"
@@ -1056,11 +1224,22 @@ function AdminDashboard({ user }: { user: any }) {
         )}
       </AnimatePresence>
 
+      <ConfirmModal 
+        isOpen={confirmConfig.isOpen}
+        onClose={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmConfig.onConfirm}
+        title={confirmConfig.title}
+        message={confirmConfig.message}
+        type={confirmConfig.type}
+        confirmText={confirmConfig.confirmText}
+      />
+
       <AnimatePresence>
         {editingBooking && (
           <EditBookingModal 
             booking={editingBooking} 
             onClose={() => setEditingBooking(null)} 
+            onSync={handleCalendarSync}
           />
         )}
       </AnimatePresence>
@@ -1086,7 +1265,7 @@ function AdminDashboard({ user }: { user: any }) {
   );
 }
 
-function EditBookingModal({ booking, onClose }: { booking: Booking, onClose: () => void }) {
+function EditBookingModal({ booking, onClose, onSync }: { booking: Booking, onClose: () => void, onSync: (booking: Booking) => void }) {
   const [locations, setLocations] = useState<Location[]>([]);
   const [availableSlots, setAvailableSlots] = useState<Slot[]>([]);
   const [selectedLocationId, setSelectedLocationId] = useState('');
@@ -1143,6 +1322,12 @@ function EditBookingModal({ booking, onClose }: { booking: Booking, onClose: () 
       }
 
       await updateDoc(doc(db, 'bookings', booking.id), updates);
+
+      // Se já tinha ID do Google, dispara a sincronização automática com os novos dados
+      if (updates.google_event_id) {
+        onSync({ ...booking, ...updates });
+      }
+
       onClose();
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'bookings');
@@ -1284,7 +1469,7 @@ function EditBookingModal({ booking, onClose }: { booking: Booking, onClose: () 
   );
 }
 
-function ScheduleManager({ user }: { user: any }) {
+function ScheduleManager({ user, setToast }: { user: any, setToast: (t: any) => void }) {
   const [locations, setLocations] = useState<Location[]>([]);
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
   const [selectedDate, setSelectedDate] = useState(startOfToday());
@@ -1380,6 +1565,76 @@ function ScheduleManager({ user }: { user: any }) {
     }
   };
 
+  const handleShareWeeklyAgenda = async () => {
+    if (!selectedLocation) return;
+    
+    try {
+      setLoading(true);
+      
+      // Calculate Monday and Sunday of this week
+      const today = startOfToday();
+      const monday = startOfWeek(today, { weekStartsOn: 1 });
+      const sunday = endOfWeek(today, { weekStartsOn: 1 });
+      
+      const mondayStr = format(monday, 'yyyy-MM-dd');
+      const sundayStr = format(sunday, 'yyyy-MM-dd');
+      
+      const q = query(
+        collection(db, 'slots'), 
+        where('location_id', '==', selectedLocation.id),
+        where('date', '>=', mondayStr),
+        where('date', '<=', sundayStr),
+        where('is_available', '==', true)
+      );
+      
+      const snapshot = await getDocs(q);
+      const slots = snapshot.docs.map(doc => doc.data() as Slot);
+      
+      // Sort in memory
+      slots.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+
+      // Group by date
+      const grouped = slots.reduce((acc, slot) => {
+        if (!acc[slot.date]) acc[slot.date] = [];
+        acc[slot.date].push(slot.time);
+        return acc;
+      }, {} as Record<string, string[]>);
+
+      let report = `📅 Horários disponíveis para Aulas\n📍 ${selectedLocation.name}\n\n`;
+      
+      for (let i = 0; i < 7; i++) {
+        const date = addDays(monday, i);
+        if (date < today) continue;
+
+        const dateStr = format(date, 'yyyy-MM-dd');
+        const daySlots = grouped[dateStr] || [];
+        
+        const dayName = format(date, "EEEE dd/MM", { locale: ptBR });
+        // Uppercase first letter
+        const capitalizedDay = dayName.charAt(0).toUpperCase() + dayName.slice(1);
+        
+        report += `🎾 ${capitalizedDay}:\n`;
+        
+        if (daySlots.length === 0) {
+          report += `❌\n`;
+        } else {
+          // Add a newline before times as in example
+          report += `\n${daySlots.map(t => t.replace(':00', 'h')).join('\n')}\n`;
+        }
+        report += '\n';
+      }
+
+      await navigator.clipboard.writeText(report.trim());
+      setToast({ message: "Agenda da semana copiada!", type: 'success' });
+      
+    } catch (error) {
+      console.error(error);
+      setToast({ message: "Erro ao gerar agenda.", type: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="grid md:grid-cols-3 gap-8">
       <div className="md:col-span-1 space-y-6">
@@ -1434,9 +1689,20 @@ function ScheduleManager({ user }: { user: any }) {
       <div className="md:col-span-2 space-y-6">
         {selectedLocation ? (
           <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 space-y-8">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <h3 className="font-bold text-xl">Gerenciar Horários: {selectedLocation.name}</h3>
-              <div className="text-sm text-gray-400 font-medium">{format(selectedDate, "dd 'de' MMMM", { locale: ptBR })}</div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleShareWeeklyAgenda}
+                  disabled={loading}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-xl font-bold text-sm hover:bg-blue-100 transition-all border border-blue-100"
+                  title="Copiar agenda da semana para o clipboard"
+                >
+                  <Share2 size={16} />
+                  Postar Whats
+                </button>
+                <div className="text-sm text-gray-400 font-medium">{format(selectedDate, "dd 'de' MMMM", { locale: ptBR })}</div>
+              </div>
             </div>
 
             <div className="space-y-4">
@@ -1615,6 +1881,7 @@ function SettingsManager({ user }: { user: any }) {
   const [whatsappEnabled, setWhatsappEnabled] = useState(true);
   const [loading, setLoading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(doc(db, 'settings', 'general'), (snapshot) => {
@@ -1689,7 +1956,16 @@ function SettingsManager({ user }: { user: any }) {
           </div>
 
           <div className="space-y-2">
-            <label className="text-xs font-bold text-gray-400 uppercase">Google Scripts URL (Integração Agenda)</label>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-gray-400 uppercase">Google Scripts URL (Integração Agenda)</label>
+              <button 
+                type="button"
+                onClick={() => setShowGuide(true)}
+                className="text-[10px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 bg-blue-50 px-2 py-1 rounded-lg border border-blue-100"
+              >
+                <FileText size={12} /> MANUAL DE CRIAÇÃO
+              </button>
+            </div>
             <div className="relative">
               <LayoutDashboard className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
               <input 
@@ -1725,6 +2001,146 @@ function SettingsManager({ user }: { user: any }) {
           </motion.div>
         )}
       </div>
+
+      <AnimatePresence>
+        {showGuide && (
+          <ScriptGuideModal onClose={() => setShowGuide(false)} />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function ScriptGuideModal({ onClose }: { onClose: () => void }) {
+  const codeSnippet = `function doGet(e) {
+  try {
+    var p = e.parameter;
+    var calendar = CalendarApp.getDefaultCalendar();
+    var event;
+    
+    // --- AÇÃO DE EXCLUSÃO ---
+    if (p.action === "delete" && p.id_evento && p.id_evento !== "" && p.id_evento !== "undefined") {
+      try {
+        event = calendar.getEventById(p.id_evento);
+        if (event) {
+          event.deleteEvent();
+        }
+      } catch (e) {}
+      return respond({ status: "success", message: "Excluído" }, p.callback);
+    }
+    // ------------------------
+
+    var start = new Date(p.inicio);
+    var end = new Date(p.fim);
+    if (!p.fim || start.getTime() === end.getTime()) {
+      end = new Date(start.getTime() + (60 * 60 * 1000));
+    }
+
+    if (p.id_evento && p.id_evento !== "" && p.id_evento !== "undefined") {
+      try {
+        event = calendar.getEventById(p.id_evento);
+        if (event) {
+          event.setTitle(p.titulo);
+          event.setDescription(p.descricao);
+          event.setLocation(p.local);
+          event.setTime(start, end);
+        } else {
+          event = calendar.createEvent(p.titulo, start, end, {description: p.descricao, location: p.local});
+        }
+      } catch (err) {
+        event = calendar.createEvent(p.titulo, start, end, {description: p.descricao, location: p.local});
+      }
+    } else {
+      event = calendar.createEvent(p.titulo, start, end, {description: p.descricao, location: p.local});
+    }
+
+    return respond({
+      status: "success",
+      id: event.getId(),
+      message: "Sync OK"
+    }, p.callback);
+
+  } catch (error) {
+    return respond({status: "error", message: error.toString()}, e.parameter.callback);
+  }
+}
+
+function respond(result, callback) {
+  var output = JSON.stringify(result);
+  if (callback) {
+    return ContentService.createTextOutput(callback + "(" + output + ")")
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  return ContentService.createTextOutput(output).setMimeType(ContentService.MimeType.JSON);
+}`;
+
+  const copyCode = () => {
+    navigator.clipboard.writeText(codeSnippet);
+    alert('Código copiado para a área de transferência!');
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[150] p-4">
+      <motion.div 
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.9, opacity: 0 }}
+        className="bg-white p-8 rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto space-y-6 relative"
+      >
+        <button onClick={onClose} className="absolute top-6 right-6 text-gray-400 hover:text-gray-600">
+          <XCircle size={28} />
+        </button>
+
+        <div className="space-y-2">
+          <h3 className="text-2xl font-bold flex items-center gap-2">
+            <LayoutDashboard className="text-green-600" size={24} />
+            Configurar Google Calendar
+          </h3>
+          <p className="text-gray-500 text-sm">Siga os passos abaixo para criar o script que sincroniza o sistema com sua agenda.</p>
+        </div>
+
+        <div className="space-y-6">
+          <section className="space-y-3">
+            <h4 className="font-bold text-gray-900 border-l-4 border-green-500 pl-3">Passo 1: Criar o Script</h4>
+            <ol className="list-decimal list-inside space-y-2 text-sm text-gray-600 ml-2">
+              <li>Acesse o <a href="https://script.google.com/home" target="_blank" rel="noreferrer" className="text-blue-600 underline font-bold inline-flex items-center gap-1">Google Apps Script <ExternalLink size={12} /></a></li>
+              <li>Clique em <span className="font-bold text-gray-900">"Novo Projeto"</span>.</li>
+              <li>Apague todo o código que estiver lá e cole este:</li>
+            </ol>
+            
+            <div className="relative group">
+              <pre className="bg-gray-900 text-gray-100 p-4 rounded-xl text-[10px] overflow-x-auto font-mono max-h-48">
+                {codeSnippet}
+              </pre>
+              <button 
+                onClick={copyCode}
+                className="absolute top-3 right-3 p-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all flex items-center gap-2 text-[10px] font-bold"
+              >
+                <Copy size={14} /> COPIAR CÓDIGO
+              </button>
+            </div>
+          </section>
+
+          <section className="space-y-3">
+            <h4 className="font-bold text-gray-900 border-l-4 border-green-500 pl-3">Passo 2: Publicar como Web App</h4>
+            <ol className="list-decimal list-inside space-y-2 text-sm text-gray-600 ml-2">
+              <li>No canto superior direito, clique em <span className="font-bold text-gray-900">Implantar &gt; Nova implantação</span>.</li>
+              <li>Selecione o tipo: <span className="font-bold text-gray-900">App da Web</span>.</li>
+              <li>Em "Executar como", deixe <span className="font-bold text-gray-900">"Eu"</span> (sua conta).</li>
+              <li>Em "Quem tem acesso", escolha <span className="font-bold text-gray-900 text-red-600">"Qualquer pessoa"</span>.</li>
+              <li>Clique em <span className="font-bold text-gray-900">Implantar</span> e autorize todas as permissões.</li>
+              <li><span className="font-bold text-gray-900">IMPORTANTE:</span> Copie o link gerado chamado <span className="text-green-600 font-bold">"URL do app da Web"</span> e cole nas configurações do sistema.</li>
+            </ol>
+          </section>
+        </div>
+
+        <button 
+          onClick={onClose}
+          className="w-full bg-gray-900 text-white py-3 rounded-xl font-bold mt-4"
+        >
+          Entendi, pronto para configurar!
+        </button>
+      </motion.div>
     </div>
   );
 }
