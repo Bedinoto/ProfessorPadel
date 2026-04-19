@@ -39,27 +39,29 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isAdmin() {
-      return isAuthenticated() && 
-        (request.auth.token.email == "uillian.bedinoto@gmail.com");
+    function isTeacher(data) {
+      return isAuthenticated() && data.teacher_id == request.auth.uid;
     }
 
     function isValidLocation(data) {
-      return data.keys().hasAll(['name']) &&
-             data.name is string && data.name.size() > 0 && data.name.size() < 100;
+      return data.keys().hasAll(['name', 'teacher_id']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.teacher_id is string;
     }
 
     function isValidSlot(data) {
-      return data.keys().hasAll(['location_id', 'date', 'time', 'is_available']) &&
+      return data.keys().hasAll(['location_id', 'teacher_id', 'date', 'time', 'is_available']) &&
              data.location_id is string &&
+             data.teacher_id is string &&
              data.date is string && data.date.matches("^\\d{4}-\\d{2}-\\d{2}$") &&
              data.time is string && data.time.matches("^\\d{2}:\\d{2}$") &&
              data.is_available is bool;
     }
 
     function isValidBooking(data) {
-      return data.keys().hasAll(['slot_id', 'student_name', 'student_phone', 'booking_type', 'price', 'paid', 'date', 'time', 'location_name']) &&
+      return data.keys().hasAll(['slot_id', 'teacher_id', 'student_name', 'student_phone', 'booking_type', 'price', 'paid', 'date', 'time', 'location_name']) &&
              data.slot_id is string &&
+             data.teacher_id is string &&
              data.student_name is string && data.student_name.size() > 0 && data.student_name.size() < 100 &&
              data.student_phone is string && data.student_phone.size() > 0 && data.student_phone.size() < 30 &&
              data.booking_type is string &&
@@ -70,33 +72,40 @@ service cloud.firestore {
              data.location_name is string;
     }
 
+    function isValidAppSettings(data) {
+      return data.keys().hasAll(['teacher_id', 'whatsapp_number']) &&
+             data.teacher_id is string &&
+             data.whatsapp_number is string;
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
 
     match /locations/{locationId} {
       allow read: if true; // Public read for booking
-      allow write: if isAdmin() && isValidLocation(request.resource.data);
+      allow write: if isTeacher(request.resource.data) && isValidLocation(request.resource.data);
     }
 
     match /slots/{slotId} {
       allow read: if true; // Public read for booking
-      allow create: if isAdmin() && isValidSlot(request.resource.data);
-      allow update: if (isAdmin() && isValidSlot(request.resource.data)) || 
+      allow create: if isTeacher(request.resource.data) && isValidSlot(request.resource.data);
+      allow update: if (isTeacher(request.resource.data) && isValidSlot(request.resource.data)) || 
                      (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_available']) && 
                       request.resource.data.is_available == false); // Allow public to mark as unavailable when booking
-      allow delete: if isAdmin();
+      allow delete: if isAuthenticated() && resource.data.teacher_id == request.auth.uid;
     }
 
     match /bookings/{bookingId} {
-      allow read: if isAdmin();
+      allow read: if isAuthenticated() && resource.data.teacher_id == request.auth.uid;
       allow create: if isValidBooking(request.resource.data); // Public can create booking
-      allow update, delete: if isAdmin();
+      allow update: if isAuthenticated() && resource.data.teacher_id == request.auth.uid;
+      allow delete: if isAuthenticated() && resource.data.teacher_id == request.auth.uid;
     }
 
     match /settings/{settingId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isAuthenticated() && settingId == request.auth.uid && isTeacher(request.resource.data) && isValidAppSettings(request.resource.data);
     }
     
     match /test/connection {

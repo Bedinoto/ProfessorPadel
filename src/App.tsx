@@ -132,7 +132,9 @@ export default function App() {
             className="flex items-center gap-2 cursor-pointer overflow-hidden" 
             onClick={() => setView('public')}
           >
-            <h1 className="font-bold text-lg md:text-xl tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">🎾 Instrutor <span className="text-green-600">Rafael Vielmo</span></h1>
+            <h1 className="font-bold text-lg md:text-xl tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">
+              🎾 Instrutor <span className="text-green-600">{user?.displayName || user?.email?.split('@')[0] || 'Rafael Vielmo'}</span>
+            </h1>
           </div>
           
           <div className="flex gap-4 items-center">
@@ -207,18 +209,23 @@ function PublicBooking() {
       setLocations(locs);
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'locations'));
 
-    // Fetch app settings
-    const settingsUnsubscribe = onSnapshot(doc(db, 'settings', 'general'), (snapshot) => {
-      if (snapshot.exists()) {
-        setAppSettings({ id: snapshot.id, ...snapshot.data() } as AppSettings);
-      }
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'settings'));
-
     return () => {
       unsubscribe();
-      settingsUnsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (selectedLocation) {
+      // Fetch app settings for this specific teacher
+      const settingsUnsubscribe = onSnapshot(doc(db, 'settings', selectedLocation.teacher_id), (snapshot) => {
+        if (snapshot.exists()) {
+          setAppSettings({ id: snapshot.id, ...snapshot.data() } as AppSettings);
+        }
+      }, (error) => handleFirestoreError(error, OperationType.LIST, 'settings'));
+      
+      return () => settingsUnsubscribe();
+    }
+  }, [selectedLocation]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -306,6 +313,7 @@ function PublicBooking() {
       const bookingId = Date.now().toString();
       await setDoc(doc(db, 'bookings', bookingId), {
         slot_id: selectedSlot.id,
+        teacher_id: selectedLocation?.teacher_id,
         student_name: formData.name,
         student_phone: formData.phone,
         booking_type: formData.type,
@@ -825,27 +833,33 @@ function AdminDashboard({ user }: { user: any }) {
   }, [toast]);
 
   useEffect(() => {
-    // Fetch app settings
-    const unsubscribe = onSnapshot(doc(db, 'settings', 'general'), (snapshot) => {
+    // Fetch app settings for this teacher
+    const unsubscribe = onSnapshot(doc(db, 'settings', user.uid), (snapshot) => {
       if (snapshot.exists()) {
         setAppSettings({ id: snapshot.id, ...snapshot.data() } as AppSettings);
       }
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'settings'));
     return () => unsubscribe();
-  }, []);
+  }, [user.uid]);
 
   useEffect(() => {
     let unsubscribe: () => void;
     
     if (tab === 'bookings') {
-      const q = query(collection(db, 'bookings'), orderBy('date', 'desc'), orderBy('time', 'desc'));
+      const q = query(
+        collection(db, 'bookings'), 
+        where('teacher_id', '==', user.uid),
+        orderBy('date', 'desc'), 
+        orderBy('time', 'desc')
+      );
       unsubscribe = onSnapshot(q, (snapshot) => {
         const allBookings = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Booking));
         setBookings(allBookings);
         setLoading(false);
       }, (error) => handleFirestoreError(error, OperationType.LIST, 'bookings'));
     } else if (tab === 'finance') {
-      unsubscribe = onSnapshot(collection(db, 'bookings'), (snapshot) => {
+      const q = query(collection(db, 'bookings'), where('teacher_id', '==', user.uid));
+      unsubscribe = onSnapshot(q, (snapshot) => {
         const allBookings = snapshot.docs.map(doc => doc.data() as Booking);
         const total_revenue = allBookings.reduce((acc, b) => acc + b.price, 0);
         const total_paid = allBookings.filter(b => b.paid).reduce((acc, b) => acc + b.price, 0);
@@ -865,7 +879,7 @@ function AdminDashboard({ user }: { user: any }) {
     return () => {
       if (unsubscribe) unsubscribe();
     };
-  }, [tab]);
+  }, [tab, user.uid]);
 
   const handleCalendarSync = async (booking: Booking) => {
     if (!appSettings?.google_script_url) {
@@ -1455,15 +1469,20 @@ function EditBookingModal({ booking, onClose, onSync }: { booking: Booking, onCl
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'locations'), (snapshot) => {
+    const q = query(collection(db, 'locations'), where('teacher_id', '==', booking.teacher_id));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       setLocations(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Location)));
-    });
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'locations'));
     return () => unsubscribe();
-  }, []);
+  }, [booking.teacher_id]);
 
   useEffect(() => {
-    // Fetch available slots
-    const q = query(collection(db, 'slots'), where('is_available', '==', true));
+    // Fetch available slots for this specific teacher
+    const q = query(
+      collection(db, 'slots'), 
+      where('is_available', '==', true),
+      where('teacher_id', '==', booking.teacher_id)
+    );
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const allSlots = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Slot));
       const todayStr = format(startOfToday(), 'yyyy-MM-dd');
@@ -1677,12 +1696,13 @@ function ScheduleManager({ user, setToast }: { user: any, setToast: (t: any) => 
   ];
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'locations'), (snapshot) => {
+    const q = query(collection(db, 'locations'), where('teacher_id', '==', user.uid));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       const locs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Location));
       setLocations(locs);
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'locations'));
     return () => unsubscribe();
-  }, []);
+  }, [user.uid]);
 
   useEffect(() => {
     if (selectedLocation) {
@@ -1711,14 +1731,14 @@ function ScheduleManager({ user, setToast }: { user: any, setToast: (t: any) => 
   useEffect(() => {
     if (selectedDate) {
       const dateStr = format(selectedDate, 'yyyy-MM-dd');
-      const q = query(collection(db, 'slots'), where('date', '==', dateStr));
+      const q = query(collection(db, 'slots'), where('date', '==', dateStr), where('teacher_id', '==', user.uid));
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const slots = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Slot));
         setAllSlotsForDate(slots);
       }, (error) => handleFirestoreError(error, OperationType.LIST, 'slots'));
       return () => unsubscribe();
     }
-  }, [selectedDate]);
+  }, [selectedDate, user.uid]);
 
   const handleSaveSlots = async () => {
     if (!selectedLocation || availableTimes.length === 0) return;
@@ -1731,6 +1751,7 @@ function ScheduleManager({ user, setToast }: { user: any, setToast: (t: any) => 
         const slotId = `${selectedLocation.id}_${dateStr}_${time.replace(':', '')}`;
         await setDoc(doc(db, 'slots', slotId), {
           location_id: selectedLocation.id,
+          teacher_id: user.uid,
           date: dateStr,
           time,
           is_available: true
@@ -1999,18 +2020,22 @@ function LocationManager({ user }: { user: any }) {
   const [newName, setNewName] = useState('');
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'locations'), (snapshot) => {
+    const q = query(collection(db, 'locations'), where('teacher_id', '==', user.uid));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       const locs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Location));
       setLocations(locs);
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'locations'));
     return () => unsubscribe();
-  }, []);
+  }, [user.uid]);
 
   const handleAdd = async () => {
     if (!newName.trim()) return;
     try {
       const id = Date.now().toString();
-      await setDoc(doc(db, 'locations', id), { name: newName });
+      await setDoc(doc(db, 'locations', id), { 
+        name: newName,
+        teacher_id: user.uid
+      });
       setNewName('');
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'locations');
@@ -2077,7 +2102,7 @@ function SettingsManager({ user }: { user: any }) {
   const [showGuide, setShowGuide] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(doc(db, 'settings', 'general'), (snapshot) => {
+    const unsubscribe = onSnapshot(doc(db, 'settings', user.uid), (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.data() as any;
         setWhatsappNumber(data.whatsapp_number || '');
@@ -2086,13 +2111,14 @@ function SettingsManager({ user }: { user: any }) {
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'settings'));
     return () => unsubscribe();
-  }, []);
+  }, [user.uid]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
-      await setDoc(doc(db, 'settings', 'general'), {
+      await setDoc(doc(db, 'settings', user.uid), {
+        teacher_id: user.uid,
         whatsapp_number: whatsappNumber.replace(/\D/g, ''),
         google_script_url: googleScriptUrl.trim(),
         whatsapp_enabled: whatsappEnabled
