@@ -28,7 +28,9 @@ import {
   Share2,
   FileText,
   Copy,
-  ExternalLink
+  ExternalLink,
+  AlertCircle,
+  MessageCircle
 } from 'lucide-react';
 import { format, addDays, startOfToday, isSameDay, parseISO, startOfWeek, endOfWeek } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -97,7 +99,7 @@ export default function App() {
   const [view, setView] = useState<'public' | 'login' | 'admin'>('public');
   const [user, setUser] = useState<any>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
-  const [activeTeacherName, setActiveTeacherName] = useState('Rafael Vielmo');
+  const [activeTeacherName, setActiveTeacherName] = useState('');
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -117,7 +119,7 @@ export default function App() {
       const unsubscribe = onSnapshot(doc(db, 'settings', user.uid), (snapshot) => {
         if (snapshot.exists()) {
           const data = snapshot.data();
-          setActiveTeacherName(data.teacher_name || user.displayName || user.email?.split('@')[0] || 'Rafael Vielmo');
+          setActiveTeacherName(data.teacher_name || user.displayName || user.email?.split('@')[0]);
         }
       });
       return () => unsubscribe();
@@ -146,7 +148,11 @@ export default function App() {
             onClick={() => setView('public')}
           >
             <h1 className="font-bold text-lg md:text-xl tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">
-              🎾 Instrutor <span className="text-green-600">{activeTeacherName}</span>
+              {activeTeacherName ? (
+                <>🎾 Instrutor <span className="text-green-600">{activeTeacherName}</span></>
+              ) : (
+                <>🎾 Agenda de Aulas</>
+              )}
             </h1>
           </div>
           
@@ -207,6 +213,8 @@ function PublicBooking({ onTeacherNameFetched }: { onTeacherNameFetched?: (name:
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
   const bookingFormRef = useRef<HTMLDivElement>(null);
+  const [params] = useState(() => new URLSearchParams(window.location.search));
+  const hasLocParam = params.has('loc');
 
   useEffect(() => {
     if (selectedSlot) {
@@ -379,6 +387,56 @@ function PublicBooking({ onTeacherNameFetched }: { onTeacherNameFetched?: (name:
       setStatus('error');
     }
   };
+
+  if (!hasLocParam) {
+    return (
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="max-w-md mx-auto text-center space-y-6 pt-12 text-balance px-4"
+      >
+        <div className="w-24 h-24 bg-red-50 rounded-full flex items-center justify-center mx-auto shadow-sm border border-red-100">
+          <AlertCircle size={48} className="text-red-500" />
+        </div>
+        
+        <div className="space-y-4">
+          <h2 className="text-2xl font-bold tracking-tight text-gray-900 leading-tight">Link de Agendamento Incompleto</h2>
+          <p className="text-gray-500 text-lg leading-relaxed">
+            Parece que você acessou um link genérico. Cada professor possui seu link personalizado.
+          </p>
+        </div>
+
+        <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-xl shadow-gray-100/50 space-y-6">
+          <p className="text-gray-600 font-medium">
+            Como agendar sua aula:
+          </p>
+          <div className="text-left space-y-4">
+            <div className="flex items-start gap-4">
+              <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center text-green-600 flex-shrink-0 text-xs font-bold">1</div>
+              <p className="text-gray-600 text-sm">Entre em contato com seu professor.</p>
+            </div>
+            <div className="flex items-start gap-4">
+              <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center text-green-600 flex-shrink-0 text-xs font-bold">2</div>
+              <p className="text-gray-600 text-sm">Peça o link da **Agenda Disponível** atualizado.</p>
+            </div>
+          </div>
+          <div className="pt-2">
+            <div className="flex items-center justify-center gap-2 text-white font-bold bg-green-600 py-3.5 rounded-2xl shadow-lg shadow-green-100 hover:bg-green-700 transition-all active:scale-95 cursor-pointer">
+              <MessageCircle size={20} />
+              Chamar no WhatsApp
+            </div>
+          </div>
+        </div>
+
+        <button 
+          onClick={() => window.history.back()}
+          className="text-sm font-semibold text-gray-400 hover:text-gray-600 transition-colors pt-4"
+        >
+          ← Voltar para a página anterior
+        </button>
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div 
@@ -2168,7 +2226,7 @@ function SettingsManager({ user }: { user: any }) {
               <input 
                 required
                 type="text"
-                placeholder="Ex: Rafael Vielmo"
+                placeholder="Ex: Seu Nome"
                 className="w-full pl-10 pr-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none"
                 value={teacherName}
                 onChange={e => setTeacherName(e.target.value)}
