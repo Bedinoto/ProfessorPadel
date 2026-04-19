@@ -1105,7 +1105,7 @@ function AdminDashboard({ user, teacherName }: { user: any, teacherName: string 
       <AnimatePresence mode="wait">
         {tab === 'schedule' && (
           <motion.div key="schedule" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <ScheduleManager user={user} teacherName={teacherName} setToast={setToast} />
+            <ScheduleManager user={user} teacherName={teacherName} setToast={setToast} appSettings={appSettings} />
           </motion.div>
         )}
         {tab === 'locations' && (
@@ -1760,7 +1760,17 @@ function EditBookingModal({
   );
 }
 
-function ScheduleManager({ user, teacherName, setToast }: { user: any, teacherName: string, setToast: (t: any) => void }) {
+function ScheduleManager({ 
+  user, 
+  teacherName, 
+  setToast,
+  appSettings 
+}: { 
+  user: any, 
+  teacherName: string, 
+  setToast: (t: any) => void,
+  appSettings: AppSettings | null 
+}) {
   const [locations, setLocations] = useState<Location[]>([]);
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
   const [selectedDate, setSelectedDate] = useState(startOfToday());
@@ -1864,19 +1874,22 @@ function ScheduleManager({ user, teacherName, setToast }: { user: any, teacherNa
     try {
       setLoading(true);
       
-      // Calculate Monday and Sunday of this week
+      const startDay = appSettings?.agenda_start_day !== undefined ? appSettings.agenda_start_day : 1;
+      const duration = appSettings?.agenda_duration || 7;
+
+      // Calculate Start and End of the report
       const today = startOfToday();
-      const monday = startOfWeek(today, { weekStartsOn: 1 });
-      const sunday = endOfWeek(today, { weekStartsOn: 1 });
+      const startDateReport = startOfWeek(today, { weekStartsOn: startDay as any });
+      const endDateReport = addDays(startDateReport, duration - 1);
       
-      const mondayStr = format(monday, 'yyyy-MM-dd');
-      const sundayStr = format(sunday, 'yyyy-MM-dd');
+      const startStr = format(startDateReport, 'yyyy-MM-dd');
+      const endStr = format(endDateReport, 'yyyy-MM-dd');
       
       const q = query(
         collection(db, 'slots'), 
         where('location_id', '==', selectedLocation.id),
-        where('date', '>=', mondayStr),
-        where('date', '<=', sundayStr),
+        where('date', '>=', startStr),
+        where('date', '<=', endStr),
         where('is_available', '==', true)
       );
       
@@ -1895,8 +1908,8 @@ function ScheduleManager({ user, teacherName, setToast }: { user: any, teacherNa
 
       let report = `📅 Horários disponíveis para Aulas\n👤 Instrutor: ${teacherName}\n📍 ${selectedLocation.name}\n\n`;
       
-      for (let i = 0; i < 7; i++) {
-        const date = addDays(monday, i);
+      for (let i = 0; i < duration; i++) {
+        const date = addDays(startDateReport, i);
         if (date < today) continue;
 
         const dateStr = format(date, 'yyyy-MM-dd');
@@ -2180,6 +2193,8 @@ function SettingsManager({ user }: { user: any }) {
   const [whatsappNumber, setWhatsappNumber] = useState('');
   const [googleScriptUrl, setGoogleScriptUrl] = useState('');
   const [whatsappEnabled, setWhatsappEnabled] = useState(true);
+  const [agendaStartDay, setAgendaStartDay] = useState(1);
+  const [agendaDuration, setAgendaDuration] = useState(7);
   const [bookingTypes, setBookingTypes] = useState<BookingType[]>([]);
   const [newTypeName, setNewTypeName] = useState('');
   const [newTypePrice, setNewTypePrice] = useState('');
@@ -2195,6 +2210,8 @@ function SettingsManager({ user }: { user: any }) {
         setWhatsappNumber(data.whatsapp_number || '');
         setGoogleScriptUrl(data.google_script_url || '');
         setWhatsappEnabled(data.whatsapp_enabled !== false);
+        setAgendaStartDay(data.agenda_start_day !== undefined ? data.agenda_start_day : 1);
+        setAgendaDuration(data.agenda_duration || 7);
         setBookingTypes(data.booking_types || DEFAULT_BOOKING_TYPES);
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'settings'));
@@ -2211,7 +2228,9 @@ function SettingsManager({ user }: { user: any }) {
         whatsapp_number: whatsappNumber.replace(/\D/g, ''),
         google_script_url: googleScriptUrl.trim(),
         whatsapp_enabled: whatsappEnabled,
-        booking_types: bookingTypes
+        booking_types: bookingTypes,
+        agenda_start_day: agendaStartDay,
+        agenda_duration: agendaDuration
       });
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 3000);
@@ -2320,6 +2339,36 @@ function SettingsManager({ user }: { user: any }) {
               />
             </div>
             <p className="text-[10px] text-gray-400">URL do Web App implantado no Google Apps Script.</p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 pt-4 border-t">
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-gray-400 uppercase">Início do Relatório (Agenda)</label>
+              <select 
+                className="w-full px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-1 focus:ring-green-500 outline-none text-sm"
+                value={agendaStartDay}
+                onChange={e => setAgendaStartDay(Number(e.target.value))}
+              >
+                <option value={0}>Domingo</option>
+                <option value={1}>Segunda-feira</option>
+                <option value={2}>Terça-feira</option>
+                <option value={3}>Quarta-feira</option>
+                <option value={4}>Quinta-feira</option>
+                <option value={5}>Sexta-feira</option>
+                <option value={6}>Sábado</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-gray-400 uppercase">Duração (Dias)</label>
+              <input 
+                type="number"
+                min="1"
+                max="30"
+                className="w-full px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-1 focus:ring-green-500 outline-none text-sm"
+                value={agendaDuration}
+                onChange={e => setAgendaDuration(Number(e.target.value))}
+              />
+            </div>
           </div>
 
           <div className="space-y-4 pt-4 border-t">

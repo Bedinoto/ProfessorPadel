@@ -49,4 +49,6 @@ export interface AppSettings {
   google_script_url: string;
   whatsapp_enabled: boolean;
   booking_types?: BookingType[];
+  agenda_start_day?: number; // 0 (Sun) to 6 (Sat)
+  agenda_duration?: number; // Number of days to show
 }
