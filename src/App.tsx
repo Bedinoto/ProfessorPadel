@@ -2148,40 +2148,59 @@ function LocationManager({ user }: { user: any }) {
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 space-y-6">
-        <h3 className="font-bold text-xl">Gerenciar Locais de Aula</h3>
+    <div className="max-w-2xl mx-auto space-y-4 sm:space-y-6">
+      <div className="bg-white p-5 sm:p-8 rounded-3xl shadow-sm border border-gray-100 space-y-6">
+        <h3 className="font-bold text-xl md:text-2xl flex items-center gap-2">
+          <MapPin size={24} className="text-green-600" />
+          Gerenciar Locais
+        </h3>
         
-        <div className="flex gap-2">
-          <input 
-            type="text" 
-            placeholder="Nome do Local (Ex: Arena Padel)"
-            className="flex-1 px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none"
-            value={newName}
-            onChange={e => setNewName(e.target.value)}
-          />
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1">
+            <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+            <input 
+              type="text" 
+              placeholder="Nome do Local (Ex: Arena Padel)"
+              className="w-full pl-10 pr-4 py-3.5 bg-gray-50 border-none rounded-2xl focus:ring-2 focus:ring-green-500 outline-none text-sm transition-all"
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+            />
+          </div>
           <button 
             onClick={handleAdd}
-            className="bg-green-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-green-200 hover:bg-green-700 transition-all"
+            className="bg-green-600 text-white px-6 py-3.5 rounded-2xl font-bold shadow-lg shadow-green-100 hover:bg-green-700 transition-all active:scale-95 flex items-center justify-center gap-2 shrink-0"
           >
-            Adicionar
+            <Plus size={20} />
+            <span>Adicionar</span>
           </button>
         </div>
 
-        <div className="space-y-2">
-          {locations.map(loc => (
-            <div key={loc.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-green-600 shadow-sm">
-                  <MapPin size={20} />
+        <div className="space-y-3">
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest px-1">Meus Locais ({locations.length})</p>
+          <div className="grid gap-3">
+            {locations.map(loc => (
+              <div key={loc.id} className="group flex items-center justify-between p-4 bg-gray-50 hover:bg-white hover:shadow-md hover:shadow-gray-100 rounded-2xl border border-gray-100 transition-all">
+                <div className="flex items-center gap-3 overflow-hidden">
+                  <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-green-600 shadow-sm shrink-0">
+                    <MapPin size={20} />
+                  </div>
+                  <span className="font-bold text-gray-700 truncate">{loc.name}</span>
                 </div>
-                <span className="font-bold">{loc.name}</span>
+                <button 
+                  onClick={() => handleDelete(loc.id)} 
+                  className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                  title="Remover local"
+                >
+                  <Trash2 size={20} />
+                </button>
               </div>
-              <button onClick={() => handleDelete(loc.id)} className="p-2 text-gray-300 hover:text-red-500 transition-colors">
-                <Trash2 size={20} />
-              </button>
-            </div>
-          ))}
+            ))}
+            {locations.length === 0 && (
+              <div className="text-center py-10 bg-gray-50/50 rounded-3xl border border-dashed border-gray-200">
+                <p className="text-gray-400 text-sm">Você ainda não cadastrou nenhum local.</p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
