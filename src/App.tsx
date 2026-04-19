@@ -240,10 +240,21 @@ function PublicBooking() {
       );
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const allSlots = snapshot.docs.map(doc => doc.data() as Slot);
-        const days = [...new Set(allSlots.map(s => s.date))].sort();
+        const todayStr = format(startOfToday(), 'yyyy-MM-dd');
+        const now = new Date();
+        const currentTime = format(now, 'HH:mm');
+
+        // Filter out past days and past times of today
+        const futureSlots = allSlots.filter(s => {
+          if (s.date < todayStr) return false;
+          if (s.date === todayStr && s.time <= currentTime) return false;
+          return true;
+        });
+
+        const days = [...new Set(futureSlots.map(s => s.date))].sort();
         setAvailableDays(days);
         
-        if (days.length > 0 && !days.includes(format(selectedDate, 'yyyy-MM-dd'))) {
+        if (days.length > 0 && (!selectedDate || !days.includes(format(selectedDate, 'yyyy-MM-dd')))) {
           setSelectedDate(parseISO(days[0]));
         }
       }, (error) => handleFirestoreError(error, OperationType.LIST, 'slots'));
@@ -262,7 +273,17 @@ function PublicBooking() {
       );
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const filtered = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Slot));
-        setSlots(filtered.sort((a, b) => a.time.localeCompare(b.time)));
+        const todayStr = format(startOfToday(), 'yyyy-MM-dd');
+        const now = new Date();
+        const currentTime = format(now, 'HH:mm');
+
+        const futureSlots = filtered.filter(s => {
+          if (s.date < todayStr) return false;
+          if (s.date === todayStr && s.time <= currentTime) return false;
+          return true;
+        });
+        
+        setSlots(futureSlots.sort((a, b) => a.time.localeCompare(b.time)));
       }, (error) => handleFirestoreError(error, OperationType.LIST, 'slots'));
       return () => unsubscribe();
     }
@@ -1444,7 +1465,18 @@ function EditBookingModal({ booking, onClose, onSync }: { booking: Booking, onCl
     // Fetch available slots
     const q = query(collection(db, 'slots'), where('is_available', '==', true));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      setAvailableSlots(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Slot)));
+      const allSlots = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Slot));
+      const todayStr = format(startOfToday(), 'yyyy-MM-dd');
+      const now = new Date();
+      const currentTime = format(now, 'HH:mm');
+
+      const futureSlots = allSlots.filter(s => {
+        if (s.date < todayStr) return false;
+        if (s.date === todayStr && s.time <= currentTime) return false;
+        return true;
+      });
+
+      setAvailableSlots(futureSlots);
     });
     return () => unsubscribe();
   }, []);
