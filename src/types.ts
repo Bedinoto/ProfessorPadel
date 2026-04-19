@@ -36,6 +36,11 @@ export interface FinanceSummary {
   total_bookings: number;
 }
 
+export interface BookingType {
+  name: string;
+  price: number;
+}
+
 export interface AppSettings {
   id: string;
   teacher_id: string;
@@ -43,4 +48,5 @@ export interface AppSettings {
   whatsapp_number: string;
   google_script_url: string;
   whatsapp_enabled: boolean;
+  booking_types?: BookingType[];
 }

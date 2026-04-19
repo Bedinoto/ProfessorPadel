@@ -34,7 +34,7 @@ import {
 } from 'lucide-react';
 import { format, addDays, startOfToday, isSameDay, parseISO, startOfWeek, endOfWeek } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Slot, Booking, FinanceSummary, Location, AppSettings } from './types';
+import { Slot, Booking, FinanceSummary, Location, AppSettings, BookingType } from './types';
 import { 
   auth, 
   db, 
@@ -88,7 +88,7 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   throw new Error(JSON.stringify(errInfo));
 }
 
-const BOOKING_TYPES = [
+const DEFAULT_BOOKING_TYPES = [
   { name: 'Individual', price: 70 },
   { name: 'Dupla', price: 120 },
   { name: 'Trio', price: 150 },
@@ -327,7 +327,8 @@ function PublicBooking({ onTeacherNameFetched }: { onTeacherNameFetched?: (name:
     
     setStatus('loading');
     try {
-      const selectedType = BOOKING_TYPES.find(t => t.name === formData.type);
+      const activeBookingTypes = appSettings?.booking_types || DEFAULT_BOOKING_TYPES;
+      const selectedType = activeBookingTypes.find(t => t.name === formData.type);
 
       // Update slot availability
       await updateDoc(doc(db, 'slots', selectedSlot.id), {
@@ -418,12 +419,6 @@ function PublicBooking({ onTeacherNameFetched }: { onTeacherNameFetched?: (name:
             <div className="flex items-start gap-4">
               <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center text-green-600 flex-shrink-0 text-xs font-bold">2</div>
               <p className="text-gray-600 text-sm">Peça o link da **Agenda Disponível** atualizado.</p>
-            </div>
-          </div>
-          <div className="pt-2">
-            <div className="flex items-center justify-center gap-2 text-white font-bold bg-green-600 py-3.5 rounded-2xl shadow-lg shadow-green-100 hover:bg-green-700 transition-all active:scale-95 cursor-pointer">
-              <MessageCircle size={20} />
-              Chamar no WhatsApp
             </div>
           </div>
         </div>
@@ -625,7 +620,7 @@ function PublicBooking({ onTeacherNameFetched }: { onTeacherNameFetched?: (name:
             <div className="space-y-1">
               <label className="text-xs font-bold text-gray-400 uppercase">Tipo de Aula</label>
               <div className="grid grid-cols-1 gap-2">
-                {BOOKING_TYPES.map((type) => (
+                {(appSettings?.booking_types || DEFAULT_BOOKING_TYPES).map((type) => (
                   <button
                     key={type.name}
                     type="button"
@@ -1508,6 +1503,7 @@ function AdminDashboard({ user, teacherName }: { user: any, teacherName: string 
             booking={editingBooking} 
             onClose={() => setEditingBooking(null)} 
             onSync={handleCalendarSync}
+            appSettings={appSettings}
           />
         )}
       </AnimatePresence>
@@ -1533,7 +1529,17 @@ function AdminDashboard({ user, teacherName }: { user: any, teacherName: string 
   );
 }
 
-function EditBookingModal({ booking, onClose, onSync }: { booking: Booking, onClose: () => void, onSync: (booking: Booking) => void }) {
+function EditBookingModal({ 
+  booking, 
+  onClose, 
+  onSync,
+  appSettings 
+}: { 
+  booking: Booking, 
+  onClose: () => void, 
+  onSync: (booking: Booking) => void,
+  appSettings: AppSettings | null 
+}) {
   const [locations, setLocations] = useState<Location[]>([]);
   const [availableSlots, setAvailableSlots] = useState<Slot[]>([]);
   const [selectedLocationId, setSelectedLocationId] = useState('');
@@ -1579,7 +1585,8 @@ function EditBookingModal({ booking, onClose, onSync }: { booking: Booking, onCl
     e.preventDefault();
     setLoading(true);
     try {
-      const selectedType = BOOKING_TYPES.find(t => t.name === bookingType);
+      const activeBookingTypes = appSettings?.booking_types || DEFAULT_BOOKING_TYPES;
+      const selectedType = activeBookingTypes.find(t => t.name === bookingType);
       
       const updates: any = {
         booking_type: bookingType,
@@ -1654,7 +1661,7 @@ function EditBookingModal({ booking, onClose, onSync }: { booking: Booking, onCl
                 value={bookingType}
                 onChange={e => setBookingType(e.target.value)}
               >
-                {BOOKING_TYPES.map(t => <option key={t.name} value={t.name}>{t.name} (R$ {t.price})</option>)}
+                {(appSettings?.booking_types || DEFAULT_BOOKING_TYPES).map(t => <option key={t.name} value={t.name}>{t.name} (R$ {t.price})</option>)}
               </select>
             </div>
 
@@ -2173,6 +2180,9 @@ function SettingsManager({ user }: { user: any }) {
   const [whatsappNumber, setWhatsappNumber] = useState('');
   const [googleScriptUrl, setGoogleScriptUrl] = useState('');
   const [whatsappEnabled, setWhatsappEnabled] = useState(true);
+  const [bookingTypes, setBookingTypes] = useState<BookingType[]>([]);
+  const [newTypeName, setNewTypeName] = useState('');
+  const [newTypePrice, setNewTypePrice] = useState('');
   const [loading, setLoading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
@@ -2185,6 +2195,7 @@ function SettingsManager({ user }: { user: any }) {
         setWhatsappNumber(data.whatsapp_number || '');
         setGoogleScriptUrl(data.google_script_url || '');
         setWhatsappEnabled(data.whatsapp_enabled !== false);
+        setBookingTypes(data.booking_types || DEFAULT_BOOKING_TYPES);
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'settings'));
     return () => unsubscribe();
@@ -2199,7 +2210,8 @@ function SettingsManager({ user }: { user: any }) {
         teacher_name: teacherName.trim(),
         whatsapp_number: whatsappNumber.replace(/\D/g, ''),
         google_script_url: googleScriptUrl.trim(),
-        whatsapp_enabled: whatsappEnabled
+        whatsapp_enabled: whatsappEnabled,
+        booking_types: bookingTypes
       });
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 3000);
@@ -2208,6 +2220,20 @@ function SettingsManager({ user }: { user: any }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleAddType = () => {
+    if (!newTypeName.trim() || !newTypePrice) return;
+    setBookingTypes([...bookingTypes, { 
+      name: newTypeName.trim(), 
+      price: Number(newTypePrice) 
+    }]);
+    setNewTypeName('');
+    setNewTypePrice('');
+  };
+
+  const handleRemoveType = (index: number) => {
+    setBookingTypes(bookingTypes.filter((_, i) => i !== index));
   };
 
   return (
@@ -2294,6 +2320,57 @@ function SettingsManager({ user }: { user: any }) {
               />
             </div>
             <p className="text-[10px] text-gray-400">URL do Web App implantado no Google Apps Script.</p>
+          </div>
+
+          <div className="space-y-4 pt-4 border-t">
+            <label className="text-xs font-bold text-gray-400 uppercase">Tipos de Aula e Valores</label>
+            
+            <div className="flex gap-2">
+              <input 
+                type="text"
+                placeholder="Nome (Ex: Aula Individual)"
+                className="flex-1 px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none text-sm"
+                value={newTypeName}
+                onChange={e => setNewTypeName(e.target.value)}
+              />
+              <input 
+                type="number"
+                placeholder="Preço (R$)"
+                className="w-24 px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none text-sm"
+                value={newTypePrice}
+                onChange={e => setNewTypePrice(e.target.value)}
+              />
+              <button 
+                type="button"
+                onClick={handleAddType}
+                className="p-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors"
+              >
+                <Plus size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {bookingTypes.map((type, index) => (
+                <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
+                  <div className="flex items-center gap-3">
+                    <span className="font-bold text-sm">{type.name}</span>
+                    <span className="text-green-600 font-bold text-sm">R$ {type.price}</span>
+                  </div>
+                  <button 
+                    type="button"
+                    onClick={() => handleRemoveType(index)}
+                    className="p-2 text-gray-300 hover:text-red-500 transition-colors"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </div>
+              ))}
+              {bookingTypes.length === 0 && (
+                <div className="text-center py-4 text-gray-400 text-xs italic">
+                  Nenhum tipo de aula configurado. Use os padrões do sistema.
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="flex justify-end">
