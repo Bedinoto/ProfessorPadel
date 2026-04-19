@@ -39,6 +39,7 @@ export interface FinanceSummary {
 export interface AppSettings {
   id: string;
   teacher_id: string;
+  teacher_name?: string;
   whatsapp_number: string;
   google_script_url: string;
   whatsapp_enabled: boolean;

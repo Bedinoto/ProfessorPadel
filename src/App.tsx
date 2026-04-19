@@ -97,6 +97,7 @@ export default function App() {
   const [view, setView] = useState<'public' | 'login' | 'admin'>('public');
   const [user, setUser] = useState<any>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
+  const [activeTeacherName, setActiveTeacherName] = useState('Rafael Vielmo');
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -110,6 +111,18 @@ export default function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (user) {
+      const unsubscribe = onSnapshot(doc(db, 'settings', user.uid), (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          setActiveTeacherName(data.teacher_name || user.displayName || user.email?.split('@')[0] || 'Rafael Vielmo');
+        }
+      });
+      return () => unsubscribe();
+    }
+  }, [user]);
 
   const handleLogout = async () => {
     await signOut(auth);
@@ -133,7 +146,7 @@ export default function App() {
             onClick={() => setView('public')}
           >
             <h1 className="font-bold text-lg md:text-xl tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">
-              🎾 Instrutor <span className="text-green-600">{user?.displayName || user?.email?.split('@')[0] || 'Rafael Vielmo'}</span>
+              🎾 Instrutor <span className="text-green-600">{activeTeacherName}</span>
             </h1>
           </div>
           
@@ -162,7 +175,7 @@ export default function App() {
         <AnimatePresence mode="wait">
           {view === 'public' && (
             <motion.div key="public" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <PublicBooking />
+              <PublicBooking onTeacherNameFetched={setActiveTeacherName} />
             </motion.div>
           )}
           {view === 'login' && (
@@ -172,7 +185,7 @@ export default function App() {
           )}
           {view === 'admin' && user && (
             <motion.div key="admin" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <AdminDashboard user={user} />
+              <AdminDashboard user={user} teacherName={activeTeacherName} />
             </motion.div>
           )}
         </AnimatePresence>
@@ -183,7 +196,7 @@ export default function App() {
 
 // --- COMPONENTS ---
 
-function PublicBooking() {
+function PublicBooking({ onTeacherNameFetched }: { onTeacherNameFetched?: (name: string) => void }) {
   const [locations, setLocations] = useState<Location[]>([]);
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
   const [selectedDate, setSelectedDate] = useState(startOfToday());
@@ -219,13 +232,17 @@ function PublicBooking() {
       // Fetch app settings for this specific teacher
       const settingsUnsubscribe = onSnapshot(doc(db, 'settings', selectedLocation.teacher_id), (snapshot) => {
         if (snapshot.exists()) {
-          setAppSettings({ id: snapshot.id, ...snapshot.data() } as AppSettings);
+          const settings = { id: snapshot.id, ...snapshot.data() } as AppSettings;
+          setAppSettings(settings);
+          if (settings.teacher_name) {
+            onTeacherNameFetched?.(settings.teacher_name);
+          }
         }
       }, (error) => handleFirestoreError(error, OperationType.LIST, 'settings'));
       
       return () => settingsUnsubscribe();
     }
-  }, [selectedLocation]);
+  }, [selectedLocation, onTeacherNameFetched]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -797,7 +814,7 @@ function ConfirmModal({
   );
 }
 
-function AdminDashboard({ user }: { user: any }) {
+function AdminDashboard({ user, teacherName }: { user: any, teacherName: string }) {
   const [tab, setTab] = useState<'schedule' | 'bookings' | 'finance' | 'locations' | 'settings'>('schedule');
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [finance, setFinance] = useState<FinanceSummary | null>(null);
@@ -1035,7 +1052,7 @@ function AdminDashboard({ user }: { user: any }) {
       <AnimatePresence mode="wait">
         {tab === 'schedule' && (
           <motion.div key="schedule" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <ScheduleManager user={user} setToast={setToast} />
+            <ScheduleManager user={user} teacherName={teacherName} setToast={setToast} />
           </motion.div>
         )}
         {tab === 'locations' && (
@@ -1678,7 +1695,7 @@ function EditBookingModal({ booking, onClose, onSync }: { booking: Booking, onCl
   );
 }
 
-function ScheduleManager({ user, setToast }: { user: any, setToast: (t: any) => void }) {
+function ScheduleManager({ user, teacherName, setToast }: { user: any, teacherName: string, setToast: (t: any) => void }) {
   const [locations, setLocations] = useState<Location[]>([]);
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
   const [selectedDate, setSelectedDate] = useState(startOfToday());
@@ -1811,7 +1828,7 @@ function ScheduleManager({ user, setToast }: { user: any, setToast: (t: any) => 
         return acc;
       }, {} as Record<string, string[]>);
 
-      let report = `📅 Horários disponíveis para Aulas\n📍 ${selectedLocation.name}\n\n`;
+      let report = `📅 Horários disponíveis para Aulas\n👤 Instrutor: ${teacherName}\n📍 ${selectedLocation.name}\n\n`;
       
       for (let i = 0; i < 7; i++) {
         const date = addDays(monday, i);
@@ -2094,6 +2111,7 @@ function LocationManager({ user }: { user: any }) {
 }
 
 function SettingsManager({ user }: { user: any }) {
+  const [teacherName, setTeacherName] = useState('');
   const [whatsappNumber, setWhatsappNumber] = useState('');
   const [googleScriptUrl, setGoogleScriptUrl] = useState('');
   const [whatsappEnabled, setWhatsappEnabled] = useState(true);
@@ -2105,6 +2123,7 @@ function SettingsManager({ user }: { user: any }) {
     const unsubscribe = onSnapshot(doc(db, 'settings', user.uid), (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.data() as any;
+        setTeacherName(data.teacher_name || '');
         setWhatsappNumber(data.whatsapp_number || '');
         setGoogleScriptUrl(data.google_script_url || '');
         setWhatsappEnabled(data.whatsapp_enabled !== false);
@@ -2119,6 +2138,7 @@ function SettingsManager({ user }: { user: any }) {
     try {
       await setDoc(doc(db, 'settings', user.uid), {
         teacher_id: user.uid,
+        teacher_name: teacherName.trim(),
         whatsapp_number: whatsappNumber.replace(/\D/g, ''),
         google_script_url: googleScriptUrl.trim(),
         whatsapp_enabled: whatsappEnabled
@@ -2141,6 +2161,21 @@ function SettingsManager({ user }: { user: any }) {
         </h3>
         
         <form onSubmit={handleSave} className="space-y-4">
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-gray-400 uppercase">Seu Nome (Como aparece para o aluno)</label>
+            <div className="relative">
+              <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+              <input 
+                required
+                type="text"
+                placeholder="Ex: Rafael Vielmo"
+                className="w-full pl-10 pr-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none"
+                value={teacherName}
+                onChange={e => setTeacherName(e.target.value)}
+              />
+            </div>
+          </div>
+
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-gray-400 uppercase">Número do WhatsApp (Destino das Notificações)</label>
