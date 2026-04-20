@@ -43,7 +43,7 @@ import {
 } from 'lucide-react';
 import { format, addDays, startOfToday, isSameDay, parseISO, startOfWeek, endOfWeek } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { logoBase64 } from './assets/logoBase64';
+import { logoBase64, logoFallback } from './assets/logoBase64';
 import { Slot, Booking, FinanceSummary, Location, AppSettings, BookingType, Product } from './types';
 import { 
   auth, 
@@ -113,6 +113,7 @@ export default function App() {
   const [activeTeacherName, setActiveTeacherName] = useState('');
   const [activeUserType, setActiveUserType] = useState<'professor' | 'court_owner'>('professor');
   const [activeLogoUrl, setActiveLogoUrl] = useState('');
+  const [logoError, setLogoError] = useState(false);
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error' | 'info'} | null>(null);
 
   useEffect(() => {
@@ -143,6 +144,10 @@ export default function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    setLogoError(false);
+  }, [activeLogoUrl, logoBase64]);
 
   useEffect(() => {
     if (user) {
@@ -180,10 +185,11 @@ export default function App() {
             onClick={() => setView('public')}
           >
             <img 
-              src={activeLogoUrl || logoBase64} 
+              src={logoError ? logoFallback : (activeLogoUrl || logoBase64)} 
               alt="Logo" 
               className="h-full w-auto object-contain" 
               referrerPolicy="no-referrer"
+              onError={() => setLogoError(true)}
             />
             
             <div className="flex items-center border-l sm:border-l-2 border-gray-100 pl-2 sm:pl-4 h-6 md:h-10 lg:h-12 mt-0.5 sm:mt-1">
@@ -271,7 +277,11 @@ export default function App() {
           )}
           {view === 'login' && (
             <motion.div key="login" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <Login onLogin={() => setView('admin')} />
+              <Login 
+                onLogin={() => setView('admin')} 
+                logoError={logoError} 
+                setLogoError={setLogoError}
+              />
             </motion.div>
           )}
           {view === 'admin' && user && (
@@ -934,7 +944,15 @@ function PublicBooking({
   );
 }
 
-function Login({ onLogin }: { onLogin: () => void }) {
+function Login({ 
+  onLogin, 
+  logoError, 
+  setLogoError 
+}: { 
+  onLogin: () => void, 
+  logoError: boolean, 
+  setLogoError: (val: boolean) => void 
+}) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -991,10 +1009,11 @@ function Login({ onLogin }: { onLogin: () => void }) {
     >
       <div className="text-center space-y-4">
         <img 
-          src={logoBase64} 
+          src={logoError ? logoFallback : logoBase64} 
           alt="Logo" 
           className="h-24 w-auto mx-auto object-contain" 
           referrerPolicy="no-referrer"
+          onError={() => setLogoError(true)}
         />
         <h2 className="text-2xl font-bold">Área do Gestor</h2>
         <p className="text-gray-500">Entre para gerenciar sua agenda.</p>
