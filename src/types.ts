@@ -27,6 +27,7 @@ export interface Booking {
   location_name: string;
   google_event_id?: string;
   google_synced?: boolean;
+  user_type?: 'professor' | 'court_owner';
 }
 
 export interface FinanceSummary {

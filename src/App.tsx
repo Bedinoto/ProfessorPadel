@@ -110,6 +110,7 @@ export default function App() {
   const [user, setUser] = useState<any>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [activeTeacherName, setActiveTeacherName] = useState('');
+  const [activeUserType, setActiveUserType] = useState<'professor' | 'court_owner'>('professor');
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error' | 'info'} | null>(null);
 
   useEffect(() => {
@@ -147,6 +148,7 @@ export default function App() {
         if (snapshot.exists()) {
           const data = snapshot.data();
           setActiveTeacherName(data.teacher_name || user.displayName || user.email?.split('@')[0]);
+          setActiveUserType(data.user_type || 'professor');
         }
       });
       return () => unsubscribe();
@@ -179,9 +181,14 @@ export default function App() {
             <div className="flex items-center border-l sm:border-l-2 border-gray-100 pl-2 sm:pl-4 h-6 md:h-10 lg:h-12 mt-0.5 sm:mt-1">
               <h1 className="font-black text-[10px] md:text-lg lg:text-xl tracking-tight whitespace-nowrap overflow-hidden text-ellipsis uppercase">
                 {activeTeacherName ? (
-                  <>Instrutor <span className="text-green-600">{activeTeacherName}</span></>
+                  <>
+                    {activeUserType === 'court_owner' ? '' : 'Instrutor '}
+                    <span className="text-green-600">{activeTeacherName}</span>
+                  </>
                 ) : (
-                  <span className="text-gray-400 text-[8px] md:text-sm">Agenda de Aulas</span>
+                  <span className="text-gray-400 text-[8px] md:text-sm">
+                    {activeUserType === 'court_owner' ? 'Agenda de Quadras' : 'Agenda de Aulas'}
+                  </span>
                 )}
               </h1>
             </div>
@@ -236,7 +243,11 @@ export default function App() {
         <AnimatePresence mode="wait">
           {view === 'public' && (
             <motion.div key="public" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <PublicBooking onTeacherNameFetched={setActiveTeacherName} setToast={setToast} />
+              <PublicBooking 
+                onTeacherNameFetched={setActiveTeacherName} 
+                onUserTypeFetched={setActiveUserType}
+                setToast={setToast} 
+              />
             </motion.div>
           )}
           {view === 'shop' && (
@@ -282,9 +293,11 @@ export default function App() {
 
 function PublicBooking({ 
   onTeacherNameFetched,
+  onUserTypeFetched,
   setToast 
 }: { 
   onTeacherNameFetched?: (name: string) => void,
+  onUserTypeFetched?: (type: 'professor' | 'court_owner') => void,
   setToast: (t: any) => void
 }) {
   const [locations, setLocations] = useState<Location[]>([]);
@@ -312,10 +325,11 @@ function PublicBooking({
   useEffect(() => {
     const fetchLocations = async () => {
       const params = new URLSearchParams(window.location.search);
-      let teacherId = params.get('tid');
+      let teacherId = params.get('tid'); // Mantido para compatibilidade
       const locId = params.get('loc');
+      const profName = params.get('prof');
 
-      // Se não tem teacherId mas tem locId, busca o local para achar o teacherId
+      // 1. Tenta achar o teacherId pelo ID do local (Mais seguro)
       if (!teacherId && locId) {
         try {
           const locDoc = await getDoc(doc(db, 'locations', locId));
@@ -327,6 +341,19 @@ function PublicBooking({
         }
       }
 
+      // 2. Se ainda não achou, tenta buscar pelo nome (prof=...)
+      if (!teacherId && profName) {
+        try {
+          const q = query(collection(db, 'settings'), where('teacher_name', '==', profName), limit(1));
+          const snapshot = await getDocs(q);
+          if (!snapshot.empty) {
+            teacherId = snapshot.docs[0].id;
+          }
+        } catch (error) {
+          console.error("Erro ao buscar por nome:", error);
+        }
+      }
+
       if (teacherId) {
         const q = query(collection(db, 'locations'), where('teacher_id', '==', teacherId));
         const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -335,9 +362,7 @@ function PublicBooking({
         }, (error) => handleFirestoreError(error, OperationType.LIST, 'locations'));
         return unsubscribe;
       } else {
-        // Se realmente não tem nenhum parâmetro, talvez devesse mostrar nada ou buscar todos (legado)
-        // Por segurança e conforme solicitado, vamos buscar todos apenas se não houver NENHUM parâmetro
-        // Mas a ideia é que sempre venha com parâmetro.
+        // Fallback: Busca todos apenas se não houver parâmetros (modo Admin ou link genérico)
         const unsubscribe = onSnapshot(collection(db, 'locations'), (snapshot) => {
           const locs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Location));
           setLocations(locs);
@@ -365,6 +390,9 @@ function PublicBooking({
           setAppSettings(settings);
           if (settings.teacher_name) {
             onTeacherNameFetched?.(settings.teacher_name);
+          }
+          if (settings.user_type) {
+            onUserTypeFetched?.(settings.user_type);
           }
         }
       }, (error) => handleFirestoreError(error, OperationType.LIST, 'settings'));
@@ -482,28 +510,33 @@ function PublicBooking({
         paid: false,
         date: dateStr,
         time: selectedSlot.time,
-        location_name: selectedLocation?.name || ''
+        location_name: selectedLocation?.name || '',
+        user_type: appSettings?.user_type || 'professor'
       };
 
       await setDoc(doc(db, 'bookings', bookingId), bookingData);
 
       setLastBooking({
         ...bookingData,
-        teacher_name: appSettings?.teacher_name || 'Seu Instrutor'
+        teacher_name: appSettings?.teacher_name || (appSettings?.user_type === 'court_owner' ? 'Responsável' : 'Seu Instrutor')
       });
       setStatus('success');
 
       // Send WhatsApp Notification
       try {
         if (appSettings?.whatsapp_enabled !== false) {
-          const instructorName = appSettings?.teacher_name || lastBooking?.teacher_name || 'Agendamento';
-          const message = `🎾 *Nova Reserva de Aula!*
+          const instructorLabel = appSettings?.user_type === 'court_owner' ? 'Responsável' : 'Instrutor';
+          const instructorName = appSettings?.teacher_name || (appSettings?.user_type === 'court_owner' ? 'Responsável' : 'Instrutor');
+          const bookingLabel = appSettings?.user_type === 'court_owner' ? 'Reserva de Quadra' : 'Reserva de Aula';
+          const userLabel = appSettings?.user_type === 'court_owner' ? 'Cliente' : 'Aluno';
           
-👤 *Instrutor:* ${instructorName}
+          const message = `🎾 *Nova ${bookingLabel}!*
+          
+👤 *${instructorLabel}:* ${instructorName}
 📍 *Local:* ${selectedLocation?.name}
 📅 *Data:* ${format(selectedDate, "dd/MM/yyyy")}
 ⏰ *Hora:* ${selectedSlot.time}
-👤 *Aluno:* ${formData.name}
+👤 *${userLabel}:* ${formData.name}
 📞 *Contato:* ${formData.phone}
 📝 *Tipo:* ${formData.type}`;
 
@@ -544,9 +577,13 @@ function PublicBooking({
     
     const formatDate = (date: Date) => format(date, "yyyyMMdd'T'HHmmss");
     
-    const title = encodeURIComponent(`Aula de Padel/Beach Tennis - ${lastBooking.teacher_name}`);
+    const eventUserType = lastBooking.user_type || 'professor';
+    const eventTitle = eventUserType === 'court_owner' ? 'Reserva de Quadra' : 'Aula de Padel/Beach Tennis';
+    const title = encodeURIComponent(`${eventTitle} - ${lastBooking.teacher_name}`);
     const dates = `${formatDate(startDate)}/${formatDate(endDate)}`;
-    const details = encodeURIComponent(`Tipo: ${lastBooking.booking_type}\nAluno: ${lastBooking.student_name}\n\nAgendado via App de Aulas.`);
+    const userLabel = eventUserType === 'court_owner' ? 'Cliente' : 'Aluno';
+    const contextLabel = eventUserType === 'court_owner' ? 'Locação' : 'Aulas';
+    const details = encodeURIComponent(`Tipo: ${lastBooking.booking_type}\n${userLabel}: ${lastBooking.student_name}\n\nAgendado via App de ${contextLabel}.`);
     const location = encodeURIComponent(lastBooking.location_name);
     
     return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dates}&details=${details}&location=${location}`;
@@ -566,7 +603,7 @@ function PublicBooking({
         <div className="space-y-4">
           <h2 className="text-2xl font-bold tracking-tight text-gray-900 leading-tight">Link de Agendamento Incompleto</h2>
           <p className="text-gray-500 text-lg leading-relaxed">
-            Parece que você acessou um link genérico. Cada professor possui seu link personalizado.
+            Parece que você acessou um link genérico. Cada profissional ou estabelecimento possui seu link personalizado.
           </p>
         </div>
 
@@ -935,8 +972,8 @@ function Login({ onLogin }: { onLogin: () => void }) {
     >
       <div className="text-center space-y-4">
         <img src="/boraprojogo.png" alt="Logo" className="h-24 w-auto mx-auto object-contain" referrerPolicy="no-referrer" />
-        <h2 className="text-2xl font-bold">Acesso do Professor</h2>
-        <p className="text-gray-500">Entre para gerenciar suas aulas.</p>
+        <h2 className="text-2xl font-bold">Área do Gestor</h2>
+        <p className="text-gray-500">Entre para gerenciar sua agenda.</p>
       </div>
 
       <div className="space-y-6">
@@ -1264,7 +1301,7 @@ function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherNam
           <h2 className="text-3xl font-black text-gray-900 uppercase">Acesso Suspenso</h2>
           <p className="text-gray-500 font-medium leading-relaxed">
             Seu acesso ao sistema foi temporariamente desativado pelo administrador. 
-            Todas as suas agendas de aula também foram ocultadas dos alunos.
+            Todas as suas agendas também foram ocultadas.
           </p>
         </div>
         <button 
@@ -1282,7 +1319,7 @@ function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherNam
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Painel de Controle</h2>
-          <p className="text-gray-500">Gerencie seus horários, alunos e finanças.</p>
+          <p className="text-gray-500">Gerencie seus horários, {appSettings?.user_type === 'court_owner' ? 'clientes' : 'alunos'} e finanças.</p>
         </div>
         
         <div className="flex bg-white p-1 rounded-xl border border-gray-200 shadow-sm overflow-x-auto scrollbar-hide">
@@ -1302,7 +1339,7 @@ function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherNam
             onClick={() => setTab('bookings')}
             className={`px-4 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${tab === 'bookings' ? 'bg-green-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-700'}`}
           >
-            Alunos
+            {appSettings?.user_type === 'court_owner' ? 'Clientes' : 'Alunos'}
           </button>
           <button 
             onClick={() => setTab('finance')}
@@ -1369,7 +1406,7 @@ function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherNam
               <div className="flex items-center justify-between">
                 <h3 className="font-bold text-lg flex items-center gap-2">
                   <Users size={20} className="text-green-600" />
-                  Controle de Alunos
+                  Controle de {appSettings?.user_type === 'court_owner' ? 'Clientes' : 'Alunos'}
                 </h3>
               </div>
               
@@ -1539,7 +1576,7 @@ function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherNam
                   return sm && em && stm;
                 }).length === 0 && (
                   <div className="bg-white py-14 text-center text-gray-400 rounded-3xl border border-dashed border-gray-100">
-                    Nenhum aluno encontrado.
+                    Nenhum {appSettings?.user_type === 'court_owner' ? 'cliente' : 'aluno'} encontrado.
                   </div>
                 )}
               </div>
@@ -1552,7 +1589,7 @@ function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherNam
                     <tr className="bg-gray-50 text-[10px] uppercase font-bold text-gray-400 tracking-wider">
                       <th className="px-6 py-4">Data/Hora</th>
                       <th className="px-6 py-4">Local</th>
-                      <th className="px-6 py-4">Aluno</th>
+                      <th className="px-6 py-4">{appSettings?.user_type === 'court_owner' ? 'Cliente' : 'Aluno'}</th>
                       <th className="px-6 py-4">Tipo</th>
                       <th className="px-6 py-4">Status</th>
                       <th className="px-6 py-4">Ações</th>
@@ -2149,7 +2186,7 @@ function ScheduleManager({
         horariosText += '\n';
       }
 
-      const bookingLink = `${window.location.origin}/?loc=${selectedLocation.id}&prof=${encodeURIComponent(teacherName)}&tid=${user.uid}`;
+      const bookingLink = `${window.location.origin}/?loc=${selectedLocation.id}&prof=${encodeURIComponent(teacherName)}`;
       
       let finalReport = '';
       if (appSettings?.whatsapp_template) {
@@ -2159,8 +2196,13 @@ function ScheduleManager({
           .split('{link}').join(bookingLink)
           .split('{horarios}').join(horariosText.trim());
       } else {
-        const header = `📅 Horários disponíveis para Aulas\n👤 Instrutor: ${teacherName}\n📍 ${selectedLocation.name}\n\n`;
-        const footer = `📅 Hora de agendar sua aula!\n\nEscolha seu melhor horário diretamente pelo link:\n👉 ${bookingLink}\n\nOu, se preferir, me envie uma mensagem aqui no WhatsApp. Vamos evoluir juntos!`;
+        const title = appSettings?.user_type === 'court_owner' ? 'Horários disponíveis' : 'Horários disponíveis para Aulas';
+        const label = appSettings?.user_type === 'court_owner' ? 'Responsável' : 'Instrutor';
+        const footerTitle = appSettings?.user_type === 'court_owner' ? 'Hora de reservar sua quadra!' : 'Hora de agendar sua aula!';
+        const cta = appSettings?.user_type === 'court_owner' ? 'Escolha seu melhor horário' : 'Escolha seu melhor horário diretamente pelo link';
+        
+        const header = `📅 ${title}\n👤 ${label}: ${teacherName}\n📍 ${selectedLocation.name}\n\n`;
+        const footer = `📅 ${footerTitle}\n\n${cta}:\n👉 ${bookingLink}\n\nOu, se preferir, me envie uma mensagem aqui no WhatsApp. Vamos evoluir juntos!`;
         finalReport = header + horariosText + footer;
       }
 
@@ -2529,7 +2571,7 @@ function SettingsManager({ user, setToast }: { user: any, setToast: (t: any) => 
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Tipo de Conta</p>
             <p className="font-bold text-gray-900">{userType === 'court_owner' ? 'Dono de Quadra' : 'Professor'}</p>
             <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-              O tipo de conta define como sua agenda e loja aparecem para os alunos.
+              O tipo de conta define como sua agenda e loja aparecem para os clientes.
               {userType === 'court_owner' 
                 ? ' (Focado em locação de quadras e equipamentos)' 
                 : ' (Focado em aulas e pacotes de treinamento)'}
@@ -2539,7 +2581,9 @@ function SettingsManager({ user, setToast }: { user: any, setToast: (t: any) => 
         
         <form onSubmit={handleSave} className="space-y-4">
           <div className="space-y-2">
-            <label className="text-xs font-bold text-gray-400 uppercase">Nome (Professor ou Nome da Quadra)</label>
+            <label className="text-xs font-bold text-gray-400 uppercase">
+              {userType === 'court_owner' ? 'Nome do Estabelecimento / Quadra' : 'Nome do Professor'}
+            </label>
             <div className="relative">
               <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
               <input 
