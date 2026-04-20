@@ -310,13 +310,49 @@ function PublicBooking({
   }, [selectedSlot]);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'locations'), (snapshot) => {
-      const locs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Location));
-      setLocations(locs);
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'locations'));
+    const fetchLocations = async () => {
+      const params = new URLSearchParams(window.location.search);
+      let teacherId = params.get('tid');
+      const locId = params.get('loc');
+
+      // Se não tem teacherId mas tem locId, busca o local para achar o teacherId
+      if (!teacherId && locId) {
+        try {
+          const locDoc = await getDoc(doc(db, 'locations', locId));
+          if (locDoc.exists()) {
+            teacherId = locDoc.data().teacher_id;
+          }
+        } catch (error) {
+          console.error("Erro ao buscar local inicial:", error);
+        }
+      }
+
+      if (teacherId) {
+        const q = query(collection(db, 'locations'), where('teacher_id', '==', teacherId));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+          const locs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Location));
+          setLocations(locs);
+        }, (error) => handleFirestoreError(error, OperationType.LIST, 'locations'));
+        return unsubscribe;
+      } else {
+        // Se realmente não tem nenhum parâmetro, talvez devesse mostrar nada ou buscar todos (legado)
+        // Por segurança e conforme solicitado, vamos buscar todos apenas se não houver NENHUM parâmetro
+        // Mas a ideia é que sempre venha com parâmetro.
+        const unsubscribe = onSnapshot(collection(db, 'locations'), (snapshot) => {
+          const locs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Location));
+          setLocations(locs);
+        }, (error) => handleFirestoreError(error, OperationType.LIST, 'locations'));
+        return unsubscribe;
+      }
+    };
+
+    let unsubscribe: (() => void) | undefined;
+    fetchLocations().then(unsub => {
+      unsubscribe = unsub;
+    });
 
     return () => {
-      unsubscribe();
+      if (unsubscribe) unsubscribe();
     };
   }, []);
 
@@ -2113,7 +2149,7 @@ function ScheduleManager({
         horariosText += '\n';
       }
 
-      const bookingLink = `${window.location.origin}/?loc=${selectedLocation.id}&prof=${encodeURIComponent(teacherName)}`;
+      const bookingLink = `${window.location.origin}/?loc=${selectedLocation.id}&prof=${encodeURIComponent(teacherName)}&tid=${user.uid}`;
       
       let finalReport = '';
       if (appSettings?.whatsapp_template) {
