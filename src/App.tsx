@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import logo from './assets/logo.png';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Calendar as CalendarIcon, 
@@ -43,7 +44,6 @@ import {
 } from 'lucide-react';
 import { format, addDays, startOfToday, isSameDay, parseISO, startOfWeek, endOfWeek } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { logoBase64, logoFallback } from './assets/logoBase64';
 import { Slot, Booking, FinanceSummary, Location, AppSettings, BookingType, Product } from './types';
 import { 
   auth, 
@@ -112,8 +112,6 @@ export default function App() {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [activeTeacherName, setActiveTeacherName] = useState('');
   const [activeUserType, setActiveUserType] = useState<'professor' | 'court_owner'>('professor');
-  const [activeLogoUrl, setActiveLogoUrl] = useState('');
-  const [logoError, setLogoError] = useState(false);
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error' | 'info'} | null>(null);
 
   useEffect(() => {
@@ -146,17 +144,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    setLogoError(false);
-  }, [activeLogoUrl, logoBase64]);
-
-  useEffect(() => {
     if (user) {
       const unsubscribe = onSnapshot(doc(db, 'settings', user.uid), (snapshot) => {
         if (snapshot.exists()) {
           const data = snapshot.data();
           setActiveTeacherName(data.teacher_name || user.displayName || user.email?.split('@')[0]);
           setActiveUserType(data.user_type || 'professor');
-          setActiveLogoUrl(data.logo_url || '');
         }
       });
       return () => unsubscribe();
@@ -184,13 +177,7 @@ export default function App() {
             className="flex items-center gap-2 sm:gap-3 cursor-pointer overflow-hidden h-10 md:h-16 lg:h-20 transition-all" 
             onClick={() => setView('public')}
           >
-            <img 
-              src={logoError ? logoFallback : (activeLogoUrl || logoBase64)} 
-              alt="Logo" 
-              className="h-full w-auto object-contain" 
-              referrerPolicy="no-referrer"
-              onError={() => setLogoError(true)}
-            />
+            <img src={logo} alt="Logo" className="h-full w-auto object-contain" />
             
             <div className="flex items-center border-l sm:border-l-2 border-gray-100 pl-2 sm:pl-4 h-6 md:h-10 lg:h-12 mt-0.5 sm:mt-1">
               <h1 className="font-black text-[10px] md:text-lg lg:text-xl tracking-tight whitespace-nowrap overflow-hidden text-ellipsis uppercase">
@@ -260,28 +247,18 @@ export default function App() {
               <PublicBooking 
                 onTeacherNameFetched={setActiveTeacherName} 
                 onUserTypeFetched={setActiveUserType}
-                onLogoFetched={setActiveLogoUrl}
                 setToast={setToast} 
               />
             </motion.div>
           )}
           {view === 'shop' && (
             <motion.div key="shop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <Shop 
-                onTeacherNameFetched={setActiveTeacherName}
-                onUserTypeFetched={setActiveUserType}
-                onLogoFetched={setActiveLogoUrl}
-                setToast={setToast} 
-              />
+              <Shop setToast={setToast} />
             </motion.div>
           )}
           {view === 'login' && (
             <motion.div key="login" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <Login 
-                onLogin={() => setView('admin')} 
-                logoError={logoError} 
-                setLogoError={setLogoError}
-              />
+              <Login onLogin={() => setView('admin')} />
             </motion.div>
           )}
           {view === 'admin' && user && (
@@ -318,12 +295,10 @@ export default function App() {
 function PublicBooking({ 
   onTeacherNameFetched,
   onUserTypeFetched,
-  onLogoFetched,
   setToast 
 }: { 
   onTeacherNameFetched?: (name: string) => void,
   onUserTypeFetched?: (type: 'professor' | 'court_owner') => void,
-  onLogoFetched?: (url: string) => void,
   setToast: (t: any) => void
 }) {
   const [locations, setLocations] = useState<Location[]>([]);
@@ -419,9 +394,6 @@ function PublicBooking({
           }
           if (settings.user_type) {
             onUserTypeFetched?.(settings.user_type);
-          }
-          if (settings.logo_url) {
-            onLogoFetched?.(settings.logo_url);
           }
         }
       }, (error) => handleFirestoreError(error, OperationType.LIST, 'settings'));
@@ -944,15 +916,7 @@ function PublicBooking({
   );
 }
 
-function Login({ 
-  onLogin, 
-  logoError, 
-  setLogoError 
-}: { 
-  onLogin: () => void, 
-  logoError: boolean, 
-  setLogoError: (val: boolean) => void 
-}) {
+function Login({ onLogin }: { onLogin: () => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -1008,13 +972,7 @@ function Login({
       className="max-w-md mx-auto mt-12 bg-white p-8 rounded-3xl shadow-xl border border-gray-100 space-y-8"
     >
       <div className="text-center space-y-4">
-        <img 
-          src={logoError ? logoFallback : logoBase64} 
-          alt="Logo" 
-          className="h-24 w-auto mx-auto object-contain" 
-          referrerPolicy="no-referrer"
-          onError={() => setLogoError(true)}
-        />
+        <img src={logo} alt="Logo" className="h-24 w-auto mx-auto object-contain" />
         <h2 className="text-2xl font-bold">Área do Gestor</h2>
         <p className="text-gray-500">Entre para gerenciar sua agenda.</p>
       </div>
@@ -2536,7 +2494,6 @@ function SettingsManager({ user, setToast }: { user: any, setToast: (t: any) => 
   const [bookingTypes, setBookingTypes] = useState<BookingType[]>([]);
   const [userType, setUserType] = useState<'professor' | 'court_owner'>('professor');
   const [whatsappTemplate, setWhatsappTemplate] = useState('');
-  const [logoUrl, setLogoUrl] = useState('');
   const [newTypeName, setNewTypeName] = useState('');
   const [newTypePrice, setNewTypePrice] = useState('');
   const [loading, setLoading] = useState(false);
@@ -2556,7 +2513,6 @@ function SettingsManager({ user, setToast }: { user: any, setToast: (t: any) => 
         setBookingTypes(data.booking_types || DEFAULT_BOOKING_TYPES);
         setUserType(data.user_type || 'professor');
         setWhatsappTemplate(data.whatsapp_template || '');
-        setLogoUrl(data.logo_url || '');
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'settings'));
     return () => unsubscribe();
@@ -2575,8 +2531,7 @@ function SettingsManager({ user, setToast }: { user: any, setToast: (t: any) => 
         booking_types: bookingTypes,
         agenda_start_day: agendaStartDay,
         agenda_duration: agendaDuration,
-        whatsapp_template: whatsappTemplate.trim(),
-        logo_url: logoUrl.trim()
+        whatsapp_template: whatsappTemplate.trim()
       });
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 3000);
@@ -2733,33 +2688,6 @@ function SettingsManager({ user, setToast }: { user: any, setToast: (t: any) => 
                 onChange={e => setAgendaDuration(Number(e.target.value))}
               />
             </div>
-          </div>
-
-          <div className="space-y-4 pt-6 border-t">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-gray-400 uppercase tracking-widest px-1">Logo da Aplicação (URL ou Base64)</label>
-            </div>
-            <div className="relative">
-              <Share2 className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-              <input 
-                type="text"
-                placeholder="Ex: https://boraprojogo.com.br/logo.png"
-                className="w-full pl-10 pr-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none text-sm"
-                value={logoUrl}
-                onChange={e => setLogoUrl(e.target.value)}
-              />
-            </div>
-            <p className="text-[10px] text-gray-400">Cole o link da sua logo. Se deixar vazio, usaremos a logo padrão.</p>
-            {logoUrl && (
-              <div className="mt-2 p-2 bg-gray-50 rounded-xl border border-dashed border-gray-200 flex items-center justify-center">
-                <img 
-                  src={logoUrl} 
-                  alt="Preview Logo" 
-                  className="h-16 w-auto object-contain" 
-                  referrerPolicy="no-referrer"
-                />
-              </div>
-            )}
           </div>
 
           <div className="space-y-4 pt-6 border-t">
@@ -3203,17 +3131,7 @@ function ProductManager({ user, setToast }: { user: any, setToast: (t: any) => v
   );
 }
 
-function Shop({ 
-  onTeacherNameFetched,
-  onUserTypeFetched,
-  onLogoFetched,
-  setToast 
-}: { 
-  onTeacherNameFetched?: (name: string) => void,
-  onUserTypeFetched?: (type: 'professor' | 'court_owner') => void,
-  onLogoFetched?: (url: string) => void,
-  setToast: (t: any) => void 
-}) {
+function Shop({ setToast }: { setToast: (t: any) => void }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -3238,13 +3156,7 @@ function Shop({
       
       // Fetch settings for whatsapp number
       getDoc(doc(db, 'settings', teacherId)).then(snap => {
-        if (snap.exists()) {
-          const settings = snap.data() as AppSettings;
-          setAppSettings(settings);
-          if (settings.teacher_name) onTeacherNameFetched?.(settings.teacher_name);
-          if (settings.user_type) onUserTypeFetched?.(settings.user_type);
-          if (settings.logo_url) onLogoFetched?.(settings.logo_url);
-        }
+        if (snap.exists()) setAppSettings(snap.data() as AppSettings);
       });
     } else {
       q = query(collection(db, 'products'), limit(50));

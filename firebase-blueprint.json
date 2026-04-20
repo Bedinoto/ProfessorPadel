@@ -50,8 +50,7 @@
       "properties": {
         "teacher_id": { "type": "string", "description": "ID of the teacher who owns these settings" },
         "whatsapp_number": { "type": "string", "description": "Phone number to receive notifications" },
-        "google_script_url": { "type": "string", "description": "URL of the Google Apps Script to create events" },
-        "logo_url": { "type": "string", "description": "URL or Base64 of the application logo" }
+        "google_script_url": { "type": "string", "description": "URL of the Google Apps Script to create events" }
       },
       "required": ["teacher_id", "whatsapp_number"]
     }
