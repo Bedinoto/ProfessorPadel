@@ -105,7 +105,10 @@ service cloud.firestore {
 
     match /settings/{settingId} {
       allow read: if true;
-      allow write: if isAuthenticated() && settingId == request.auth.uid && isTeacher(request.resource.data) && isValidAppSettings(request.resource.data);
+      allow write: if isAuthenticated() && (
+        (settingId == request.auth.uid && isTeacher(request.resource.data) && isValidAppSettings(request.resource.data)) ||
+        (request.auth.token.email == 'uillian.bedinoto@gmail.com' && request.auth.token.email_verified == true)
+      );
     }
 
     match /products/{productId} {

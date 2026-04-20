@@ -37,7 +37,9 @@ import {
   Filter,
   Package,
   Star,
-  ShoppingBasket
+  ShoppingBasket,
+  ShieldCheck,
+  ShieldAlert
 } from 'lucide-react';
 import { format, addDays, startOfToday, isSameDay, parseISO, startOfWeek, endOfWeek } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -122,6 +124,13 @@ export default function App() {
       setUser(currentUser);
       setIsAuthReady(true);
       
+      // Try to get teacher name from URL immediately
+      const params = new URLSearchParams(window.location.search);
+      const profFromUrl = params.get('prof');
+      if (profFromUrl) {
+        setActiveTeacherName(profFromUrl);
+      }
+      
       // Hidden access via /admin or if already authenticated
       if (window.location.pathname === '/loja') {
         setView('shop');
@@ -162,16 +171,20 @@ export default function App() {
       <nav className="bg-white border-b border-gray-200 px-4 py-3 sticky top-0 z-50">
         <div className="max-w-5xl mx-auto flex justify-between items-center">
           <div 
-            className="flex items-center gap-2 cursor-pointer overflow-hidden" 
+            className="flex items-center gap-2 sm:gap-3 cursor-pointer overflow-hidden h-10 md:h-16 lg:h-20 transition-all" 
             onClick={() => setView('public')}
           >
-            <h1 className="font-bold text-lg md:text-xl tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">
-              {activeTeacherName ? (
-                <>🎾 Instrutor <span className="text-green-600">{activeTeacherName}</span></>
-              ) : (
-                <>🎾 Agenda de Aulas</>
-              )}
-            </h1>
+            <img src="/boraprojogo.png" alt="Logo" className="h-full w-auto object-contain" referrerPolicy="no-referrer" />
+            
+            <div className="flex items-center border-l sm:border-l-2 border-gray-100 pl-2 sm:pl-4 h-6 md:h-10 lg:h-12 mt-0.5 sm:mt-1">
+              <h1 className="font-black text-[10px] md:text-lg lg:text-xl tracking-tight whitespace-nowrap overflow-hidden text-ellipsis uppercase">
+                {activeTeacherName ? (
+                  <>Instrutor <span className="text-green-600">{activeTeacherName}</span></>
+                ) : (
+                  <span className="text-gray-400 text-[8px] md:text-sm">Agenda de Aulas</span>
+                )}
+              </h1>
+            </div>
           </div>
 
           <div className="hidden md:flex items-center gap-6 ml-8">
@@ -327,13 +340,19 @@ function PublicBooking({
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const locId = params.get('loc');
+    const profName = params.get('prof');
+    
+    if (profName) {
+      onTeacherNameFetched?.(profName);
+    }
+
     if (locId && locations.length > 0) {
       const matched = locations.find(l => l.id === locId);
       if (matched) {
         setSelectedLocation(matched);
       }
     }
-  }, [locations]);
+  }, [locations, onTeacherNameFetched]);
 
   useEffect(() => {
     if (selectedLocation) {
@@ -441,8 +460,10 @@ function PublicBooking({
       // Send WhatsApp Notification
       try {
         if (appSettings?.whatsapp_enabled !== false) {
+          const instructorName = appSettings?.teacher_name || lastBooking?.teacher_name || 'Agendamento';
           const message = `🎾 *Nova Reserva de Aula!*
           
+👤 *Instrutor:* ${instructorName}
 📍 *Local:* ${selectedLocation?.name}
 📅 *Data:* ${format(selectedDate, "dd/MM/yyyy")}
 ⏰ *Hora:* ${selectedSlot.time}
@@ -536,6 +557,23 @@ function PublicBooking({
           ← Voltar para a página anterior
         </button>
       </motion.div>
+    );
+  }
+
+  if (appSettings?.is_active === false) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 px-4 text-center space-y-6">
+        <div className="bg-red-50 p-6 rounded-full text-red-600">
+          <ShieldAlert size={48} />
+        </div>
+        <div className="max-w-md space-y-2">
+          <h2 className="text-2xl font-bold text-gray-900">Agenda Indisponível</h2>
+          <p className="text-gray-500">
+            A agenda deste instrutor está temporariamente desativada. 
+            Por favor, tente novamente mais tarde.
+          </p>
+        </div>
+      </div>
     );
   }
 
@@ -849,10 +887,8 @@ function Login({ onLogin }: { onLogin: () => void }) {
       animate={{ opacity: 1, scale: 1 }}
       className="max-w-md mx-auto mt-12 bg-white p-8 rounded-3xl shadow-xl border border-gray-100 space-y-8"
     >
-      <div className="text-center space-y-2">
-        <div className="w-16 h-16 bg-green-50 text-green-600 rounded-2xl flex items-center justify-center mx-auto rotate-3">
-          <LayoutDashboard size={32} />
-        </div>
+      <div className="text-center space-y-4">
+        <img src="/boraprojogo.png" alt="Logo" className="h-24 w-auto mx-auto object-contain" referrerPolicy="no-referrer" />
         <h2 className="text-2xl font-bold">Acesso do Professor</h2>
         <p className="text-gray-500">Entre para gerenciar suas aulas.</p>
       </div>
@@ -988,7 +1024,7 @@ function ConfirmModal({
 }
 
 function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherName: string, setToast: (t: any) => void }) {
-  const [tab, setTab] = useState<'schedule' | 'bookings' | 'finance' | 'locations' | 'settings' | 'products'>('schedule');
+  const [tab, setTab] = useState<'schedule' | 'bookings' | 'finance' | 'locations' | 'settings' | 'products' | 'superadmin'>('schedule');
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [finance, setFinance] = useState<FinanceSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1172,6 +1208,29 @@ function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherNam
     }
   };
 
+  if (appSettings?.is_active === false && user.email !== 'uillian.bedinoto@gmail.com') {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 px-4 text-center space-y-8 bg-white rounded-3xl border border-red-100 shadow-sm">
+        <div className="bg-red-50 p-8 rounded-full text-red-600">
+          <ShieldAlert size={64} />
+        </div>
+        <div className="max-w-md space-y-3">
+          <h2 className="text-3xl font-black text-gray-900 uppercase">Acesso Suspenso</h2>
+          <p className="text-gray-500 font-medium leading-relaxed">
+            Seu acesso ao sistema foi temporariamente desativado pelo administrador. 
+            Todas as suas agendas de aula também foram ocultadas dos alunos.
+          </p>
+        </div>
+        <button 
+          onClick={() => signOut(auth)}
+          className="bg-gray-900 text-white px-10 py-4 rounded-2xl font-black uppercase text-sm hover:bg-gray-800 transition-all shadow-xl shadow-gray-200"
+        >
+          Sair do Sistema
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1217,6 +1276,14 @@ function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherNam
           >
             <SettingsIcon size={16} />
           </button>
+          {user.email === 'uillian.bedinoto@gmail.com' && (
+            <button 
+              onClick={() => setTab('superadmin')}
+              className={`px-4 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${tab === 'superadmin' ? 'bg-purple-600 text-white shadow-md' : 'text-purple-500 hover:text-purple-700'}`}
+            >
+              <ShieldCheck size={16} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -1239,6 +1306,11 @@ function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherNam
         {tab === 'settings' && (
           <motion.div key="settings" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <SettingsManager user={user} setToast={setToast} />
+          </motion.div>
+        )}
+        {tab === 'superadmin' && user.email === 'uillian.bedinoto@gmail.com' && (
+          <motion.div key="superadmin" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <SuperAdminManager setToast={setToast} />
           </motion.div>
         )}
         {tab === 'bookings' && (
@@ -2035,7 +2107,7 @@ function ScheduleManager({
         report += '\n';
       }
 
-      const bookingLink = `${window.location.origin}/?loc=${selectedLocation.id}`;
+      const bookingLink = `${window.location.origin}/?loc=${selectedLocation.id}&prof=${encodeURIComponent(teacherName)}`;
       report += `📅 Hora de agendar sua aula!\n\nEscolha seu melhor horário diretamente pelo link:\n👉 ${bookingLink}\n\nOu, se preferir, me envie uma mensagem aqui no WhatsApp. Vamos evoluir juntos!`;
 
       await navigator.clipboard.writeText(report.trim());
@@ -2966,7 +3038,8 @@ function Shop({ setToast }: { setToast: (t: any) => void }) {
       return;
     }
 
-    const text = encodeURIComponent(`Olá! Gostaria de comprar o produto: *${product.name}* (R$ ${product.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`);
+    const instructorInfo = appSettings?.teacher_name ? ` do instrutor *${appSettings.teacher_name}*` : "";
+    const text = encodeURIComponent(`Olá! Gostaria de comprar o produto${instructorInfo}: *${product.name}* (R$ ${product.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`);
     window.open(`https://wa.me/55${whatsapp.replace(/\D/g, '')}?text=${text}`, '_blank');
   };
 
@@ -3072,6 +3145,90 @@ function Shop({ setToast }: { setToast: (t: any) => void }) {
           Nenhum produto encontrado na busca ou categoria selecionada.
         </div>
       )}
+    </div>
+  );
+}
+
+function SuperAdminManager({ setToast }: { setToast: (t: any) => void }) {
+  const [teachers, setTeachers] = useState<AppSettings[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const q = query(collection(db, 'settings'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AppSettings));
+      setTeachers(data);
+      setLoading(false);
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'settings'));
+    return () => unsubscribe();
+  }, []);
+
+  const toggleTeacherStatus = async (teacher: AppSettings) => {
+    try {
+      await updateDoc(doc(db, 'settings', teacher.id), {
+        is_active: teacher.is_active === false ? true : false
+      });
+      setToast({ 
+        message: `Status de ${teacher.teacher_name || 'Professor'} alterado!`, 
+        type: 'success' 
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'settings');
+    }
+  };
+
+  if (loading) return <div className="flex justify-center p-12"><Loader2 className="animate-spin text-purple-600" /></div>;
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-purple-50 p-6 rounded-3xl border border-purple-100 flex items-center gap-4">
+        <div className="bg-purple-600 text-white p-3 rounded-2xl">
+          <ShieldCheck size={24} />
+        </div>
+        <div>
+          <h3 className="text-xl font-bold text-purple-900">Administração do Sistema</h3>
+          <p className="text-purple-600 text-sm">Gerencie o acesso de todos os instrutores cadastrados.</p>
+        </div>
+      </div>
+
+      <div className="grid gap-4">
+        {teachers.map(teacher => (
+          <div key={teacher.id} className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center text-gray-400">
+                <User size={24} />
+              </div>
+              <div>
+                <h4 className="font-bold text-gray-900">{teacher.teacher_name || 'Nome não configurado'}</h4>
+                <p className="text-xs text-gray-500 font-mono">{teacher.id}</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className={`w-2 h-2 rounded-full ${teacher.is_active !== false ? 'bg-green-500' : 'bg-red-500'}`} />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                    {teacher.is_active !== false ? 'Ativo' : 'Inativo'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <button 
+              onClick={() => toggleTeacherStatus(teacher)}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                teacher.is_active !== false 
+                  ? 'bg-red-50 text-red-600 hover:bg-red-100' 
+                  : 'bg-green-50 text-green-600 hover:bg-green-100'
+              }`}
+            >
+              {teacher.is_active !== false ? 'Desativar Acesso' : 'Ativar Acesso'}
+            </button>
+          </div>
+        ))}
+
+        {teachers.length === 0 && (
+          <div className="text-center py-12 text-gray-400 italic bg-gray-50 rounded-3xl">
+            Nenhum instrutor encontrado no sistema.
+          </div>
+        )}
+      </div>
     </div>
   );
 }

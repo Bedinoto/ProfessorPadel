@@ -51,6 +51,7 @@ export interface AppSettings {
   booking_types?: BookingType[];
   agenda_start_day?: number; // 0 (Sun) to 6 (Sat)
   agenda_duration?: number; // Number of days to show
+  is_active?: boolean;
 }
 
 export interface Product {
