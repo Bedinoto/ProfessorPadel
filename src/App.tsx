@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import logo from './assets/logo.png';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Calendar as CalendarIcon, 
@@ -176,7 +177,7 @@ export default function App() {
             className="flex items-center gap-2 sm:gap-3 cursor-pointer overflow-hidden h-10 md:h-16 lg:h-20 transition-all" 
             onClick={() => setView('public')}
           >
-            <img src="/boraprojogo.png" alt="Logo" className="h-full w-auto object-contain" />
+            <img src={logo} alt="Logo" className="h-full w-auto object-contain" />
             
             <div className="flex items-center border-l sm:border-l-2 border-gray-100 pl-2 sm:pl-4 h-6 md:h-10 lg:h-12 mt-0.5 sm:mt-1">
               <h1 className="font-black text-[10px] md:text-lg lg:text-xl tracking-tight whitespace-nowrap overflow-hidden text-ellipsis uppercase">
@@ -971,7 +972,7 @@ function Login({ onLogin }: { onLogin: () => void }) {
       className="max-w-md mx-auto mt-12 bg-white p-8 rounded-3xl shadow-xl border border-gray-100 space-y-8"
     >
       <div className="text-center space-y-4">
-        <img src="/boraprojogo.png" alt="Logo" className="h-24 w-auto mx-auto object-contain" />
+        <img src={logo} alt="Logo" className="h-24 w-auto mx-auto object-contain" />
         <h2 className="text-2xl font-bold">Área do Gestor</h2>
         <p className="text-gray-500">Entre para gerenciar sua agenda.</p>
       </div>
