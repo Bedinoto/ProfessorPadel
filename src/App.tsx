@@ -2275,11 +2275,11 @@ function SettingsManager({ user }: { user: any }) {
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 space-y-6">
-        <h3 className="font-bold text-xl flex items-center gap-2">
+    <div className="max-w-2xl mx-auto space-y-4 sm:space-y-6">
+      <div className="bg-white p-5 sm:p-8 rounded-3xl shadow-sm border border-gray-100 space-y-6">
+        <h3 className="font-bold text-xl md:text-2xl flex items-center gap-2">
           <SettingsIcon size={24} className="text-green-600" />
-          Configurações do Sistema
+          Configurações
         </h3>
         
         <form onSubmit={handleSave} className="space-y-4">
@@ -2391,30 +2391,32 @@ function SettingsManager({ user }: { user: any }) {
           </div>
 
           <div className="space-y-4 pt-4 border-t">
-            <label className="text-xs font-bold text-gray-400 uppercase">Tipos de Aula e Valores</label>
+            <label className="text-xs font-bold text-gray-400 uppercase tracking-widest px-1">Tipos de Aula e Valores</label>
             
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <input 
                 type="text"
                 placeholder="Nome (Ex: Aula Individual)"
-                className="flex-1 px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none text-sm"
+                className="flex-1 px-4 py-3.5 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none text-sm transition-all"
                 value={newTypeName}
                 onChange={e => setNewTypeName(e.target.value)}
               />
-              <input 
-                type="number"
-                placeholder="Preço (R$)"
-                className="w-24 px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none text-sm"
-                value={newTypePrice}
-                onChange={e => setNewTypePrice(e.target.value)}
-              />
-              <button 
-                type="button"
-                onClick={handleAddType}
-                className="p-3 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors"
-              >
-                <Plus size={20} />
-              </button>
+              <div className="flex gap-2">
+                <input 
+                  type="number"
+                  placeholder="Preço (R$)"
+                  className="flex-1 sm:w-24 px-4 py-3.5 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none text-sm transition-all"
+                  value={newTypePrice}
+                  onChange={e => setNewTypePrice(e.target.value)}
+                />
+                <button 
+                  type="button"
+                  onClick={handleAddType}
+                  className="p-3.5 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all active:scale-95 shadow-lg shadow-green-100 shrink-0"
+                >
+                  <Plus size={20} />
+                </button>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -2441,12 +2443,12 @@ function SettingsManager({ user }: { user: any }) {
             </div>
           </div>
 
-          <div className="flex justify-end">
+          <div className="pt-6 border-t flex justify-end">
             <button 
               disabled={loading}
-              className="bg-green-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-green-200 hover:bg-green-700 transition-all disabled:opacity-50 flex items-center gap-2"
+              className="w-full sm:w-auto bg-green-600 text-white px-8 py-4 rounded-2xl font-bold shadow-lg shadow-green-200 hover:bg-green-700 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              {loading && <Loader2 className="animate-spin" size={18} />}
+              {loading ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle size={20} />}
               Salvar Configurações
             </button>
           </div>
