@@ -211,6 +211,7 @@ function PublicBooking({ onTeacherNameFetched }: { onTeacherNameFetched?: (name:
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
   const [formData, setFormData] = useState({ name: '', phone: '', type: 'Individual' });
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [lastBooking, setLastBooking] = useState<any>(null);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
   const bookingFormRef = useRef<HTMLDivElement>(null);
   const [params] = useState(() => new URLSearchParams(window.location.search));
@@ -329,6 +330,7 @@ function PublicBooking({ onTeacherNameFetched }: { onTeacherNameFetched?: (name:
     try {
       const activeBookingTypes = appSettings?.booking_types || DEFAULT_BOOKING_TYPES;
       const selectedType = activeBookingTypes.find(t => t.name === formData.type);
+      const dateStr = format(selectedDate, 'yyyy-MM-dd');
 
       // Update slot availability
       await updateDoc(doc(db, 'slots', selectedSlot.id), {
@@ -337,7 +339,7 @@ function PublicBooking({ onTeacherNameFetched }: { onTeacherNameFetched?: (name:
 
       // Add booking
       const bookingId = Date.now().toString();
-      await setDoc(doc(db, 'bookings', bookingId), {
+      const bookingData = {
         slot_id: selectedSlot.id,
         teacher_id: selectedLocation?.teacher_id,
         student_name: formData.name,
@@ -345,11 +347,17 @@ function PublicBooking({ onTeacherNameFetched }: { onTeacherNameFetched?: (name:
         booking_type: formData.type,
         price: selectedType?.price || 0,
         paid: false,
-        date: format(selectedDate, 'yyyy-MM-dd'),
+        date: dateStr,
         time: selectedSlot.time,
         location_name: selectedLocation?.name || ''
-      });
+      };
 
+      await setDoc(doc(db, 'bookings', bookingId), bookingData);
+
+      setLastBooking({
+        ...bookingData,
+        teacher_name: appSettings?.teacher_name || 'Seu Instrutor'
+      });
       setStatus('success');
 
       // Send WhatsApp Notification
@@ -387,6 +395,26 @@ function PublicBooking({ onTeacherNameFetched }: { onTeacherNameFetched?: (name:
       console.error(err);
       setStatus('error');
     }
+  };
+
+  const getGoogleCalendarUrl = () => {
+    if (!lastBooking) return '';
+    
+    const [year, month, day] = lastBooking.date.split('-').map(Number);
+    const [hour, minute] = lastBooking.time.split(':').map(Number);
+    
+    const startDate = new Date(year, month - 1, day, hour, minute);
+    const endDate = new Date(startDate);
+    endDate.setHours(startDate.getHours() + 1);
+    
+    const formatDate = (date: Date) => format(date, "yyyyMMdd'T'HHmmss");
+    
+    const title = encodeURIComponent(`Aula de Tênis/Beach Tennis - ${lastBooking.teacher_name}`);
+    const dates = `${formatDate(startDate)}/${formatDate(endDate)}`;
+    const details = encodeURIComponent(`Tipo: ${lastBooking.booking_type}\nAluno: ${lastBooking.student_name}\n\nAgendado via App de Aulas.`);
+    const location = encodeURIComponent(lastBooking.location_name);
+    
+    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dates}&details=${details}&location=${location}`;
   };
 
   if (!hasLocParam) {
@@ -661,12 +689,25 @@ function PublicBooking({ onTeacherNameFetched }: { onTeacherNameFetched?: (name:
             </div>
             <h3 className="text-2xl font-bold">Reserva Confirmada!</h3>
             <p className="text-gray-500">Sua aula foi agendada com sucesso. Nos vemos na quadra!</p>
-            <button 
-              onClick={() => setStatus('idle')}
-              className="w-full bg-gray-900 text-white py-3 rounded-xl font-bold"
-            >
-              Entendido
-            </button>
+            
+            <div className="space-y-3 pt-4">
+              <a 
+                href={getGoogleCalendarUrl()}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all"
+              >
+                <CalendarIcon size={20} />
+                Adicionar ao Google Agenda
+              </a>
+              
+              <button 
+                onClick={() => setStatus('idle')}
+                className="w-full bg-gray-900 text-white py-4 rounded-xl font-bold hover:bg-black transition-all"
+              >
+                Fechar
+              </button>
+            </div>
           </motion.div>
         </div>
       )}
