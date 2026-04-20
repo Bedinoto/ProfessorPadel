@@ -52,6 +52,7 @@ export interface AppSettings {
   agenda_start_day?: number; // 0 (Sun) to 6 (Sat)
   agenda_duration?: number; // Number of days to show
   is_active?: boolean;
+  user_type?: 'professor' | 'court_owner';
 }
 
 export interface Product {

@@ -569,7 +569,7 @@ function PublicBooking({
         <div className="max-w-md space-y-2">
           <h2 className="text-2xl font-bold text-gray-900">Agenda Indisponível</h2>
           <p className="text-gray-500">
-            A agenda deste instrutor está temporariamente desativada. 
+            A agenda deste {appSettings?.user_type === 'court_owner' ? 'espaço' : 'instrutor'} está temporariamente desativada. 
             Por favor, tente novamente mais tarde.
           </p>
         </div>
@@ -585,8 +585,14 @@ function PublicBooking({
       className="space-y-8"
     >
       <div className="text-center space-y-2">
-        <h2 className="text-3xl font-bold tracking-tight">Reserve sua Aula</h2>
-        <p className="text-gray-500">Escolha o local e horário para começar a treinar!</p>
+        <h2 className="text-3xl font-bold tracking-tight">
+          {appSettings?.user_type === 'court_owner' ? 'Reserve sua Quadra' : 'Reserve sua Aula'}
+        </h2>
+        <p className="text-gray-500">
+          {appSettings?.user_type === 'court_owner' 
+            ? 'Escolha a quadra e o horário para o seu jogo!' 
+            : 'Escolha o local e horário para começar a treinar!'}
+        </p>
       </div>
 
       {/* Location Selector */}
@@ -723,10 +729,10 @@ function PublicBooking({
           animate={{ opacity: 1, scale: 1 }}
           className="max-w-md mx-auto bg-white p-8 rounded-2xl shadow-xl border border-gray-100 space-y-6"
         >
-          <div className="text-center">
+            <div className="text-center">
             <h3 className="text-xl font-bold">Finalizar Reserva</h3>
             <p className="text-sm text-gray-500">
-              Aula para {format(selectedDate, "dd 'de' MMMM", { locale: ptBR })} às {selectedSlot.time}
+              {appSettings?.user_type === 'court_owner' ? 'Horário para' : 'Aula para'} {format(selectedDate, "dd 'de' MMMM", { locale: ptBR })} às {selectedSlot.time}
             </p>
           </div>
 
@@ -805,7 +811,11 @@ function PublicBooking({
               <CheckCircle size={40} />
             </div>
             <h3 className="text-2xl font-bold">Reserva Confirmada!</h3>
-            <p className="text-gray-500">Sua aula foi agendada com sucesso. Nos vemos na quadra!</p>
+            <p className="text-gray-500">
+              {appSettings?.user_type === 'court_owner' 
+                ? 'Seu horário foi agendado com sucesso. Bom jogo!' 
+                : 'Sua aula foi agendada com sucesso. Nos vemos na quadra!'}
+            </p>
             
             <div className="space-y-3 pt-4">
               <a 
@@ -2392,6 +2402,7 @@ function SettingsManager({ user, setToast }: { user: any, setToast: (t: any) => 
   const [agendaStartDay, setAgendaStartDay] = useState(1);
   const [agendaDuration, setAgendaDuration] = useState(7);
   const [bookingTypes, setBookingTypes] = useState<BookingType[]>([]);
+  const [userType, setUserType] = useState<'professor' | 'court_owner'>('professor');
   const [newTypeName, setNewTypeName] = useState('');
   const [newTypePrice, setNewTypePrice] = useState('');
   const [loading, setLoading] = useState(false);
@@ -2409,6 +2420,7 @@ function SettingsManager({ user, setToast }: { user: any, setToast: (t: any) => 
         setAgendaStartDay(data.agenda_start_day !== undefined ? data.agenda_start_day : 1);
         setAgendaDuration(data.agenda_duration || 7);
         setBookingTypes(data.booking_types || DEFAULT_BOOKING_TYPES);
+        setUserType(data.user_type || 'professor');
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'settings'));
     return () => unsubscribe();
@@ -2458,10 +2470,26 @@ function SettingsManager({ user, setToast }: { user: any, setToast: (t: any) => 
           <SettingsIcon size={24} className="text-green-600" />
           Configurações
         </h3>
+
+        <div className="bg-gray-50 p-4 rounded-2xl flex items-start gap-4">
+          <div className={`p-3 rounded-xl ${userType === 'court_owner' ? 'bg-purple-100 text-purple-600' : 'bg-green-100 text-green-600'}`}>
+            {userType === 'court_owner' ? <MapPin size={20} /> : <User size={20} />}
+          </div>
+          <div>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Tipo de Conta</p>
+            <p className="font-bold text-gray-900">{userType === 'court_owner' ? 'Dono de Quadra' : 'Professor'}</p>
+            <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+              O tipo de conta define como sua agenda e loja aparecem para os alunos.
+              {userType === 'court_owner' 
+                ? ' (Focado em locação de quadras e equipamentos)' 
+                : ' (Focado em aulas e pacotes de treinamento)'}
+            </p>
+          </div>
+        </div>
         
         <form onSubmit={handleSave} className="space-y-4">
           <div className="space-y-2">
-            <label className="text-xs font-bold text-gray-400 uppercase">Seu Nome (Como aparece para o aluno)</label>
+            <label className="text-xs font-bold text-gray-400 uppercase">Nome (Professor ou Nome da Quadra)</label>
             <div className="relative">
               <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
               <input 
@@ -3166,10 +3194,24 @@ function SuperAdminManager({ setToast }: { setToast: (t: any) => void }) {
   const toggleTeacherStatus = async (teacher: AppSettings) => {
     try {
       await updateDoc(doc(db, 'settings', teacher.id), {
-        is_active: teacher.is_active === false ? true : false
+        is_active: teacher.is_active === false
       });
       setToast({ 
-        message: `Status de ${teacher.teacher_name || 'Professor'} alterado!`, 
+        message: `Status de ${teacher.teacher_name || 'Usuário'} alterado!`, 
+        type: 'success' 
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'settings');
+    }
+  };
+
+  const changeUserType = async (teacher: AppSettings, newType: 'professor' | 'court_owner') => {
+    try {
+      await updateDoc(doc(db, 'settings', teacher.id), {
+        user_type: newType
+      });
+      setToast({ 
+        message: `Tipo de conta de ${teacher.teacher_name || 'Usuário'} alterado para ${newType === 'professor' ? 'Professor' : 'Dono de Quadra'}!`, 
         type: 'success' 
       });
     } catch (error) {
@@ -3187,45 +3229,77 @@ function SuperAdminManager({ setToast }: { setToast: (t: any) => void }) {
         </div>
         <div>
           <h3 className="text-xl font-bold text-purple-900">Administração do Sistema</h3>
-          <p className="text-purple-600 text-sm">Gerencie o acesso de todos os instrutores cadastrados.</p>
+          <p className="text-purple-600 text-sm">Gerencie o acesso e o tipo de conta de todos os usuários.</p>
         </div>
       </div>
 
       <div className="grid gap-4">
         {teachers.map(teacher => (
-          <div key={teacher.id} className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex items-center justify-between">
+          <div key={teacher.id} className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center text-gray-400">
-                <User size={24} />
+                {teacher.user_type === 'court_owner' ? <MapPin size={24} /> : <User size={24} />}
               </div>
               <div>
                 <h4 className="font-bold text-gray-900">{teacher.teacher_name || 'Nome não configurado'}</h4>
                 <p className="text-xs text-gray-500 font-mono">{teacher.id}</p>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className={`w-2 h-2 rounded-full ${teacher.is_active !== false ? 'bg-green-500' : 'bg-red-500'}`} />
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
-                    {teacher.is_active !== false ? 'Ativo' : 'Inativo'}
-                  </span>
+                <div className="flex items-center gap-3 mt-1">
+                  <div className="flex items-center gap-1">
+                    <span className={`w-2 h-2 rounded-full ${teacher.is_active !== false ? 'bg-green-500' : 'bg-red-500'}`} />
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                      {teacher.is_active !== false ? 'Ativo' : 'Inativo'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 border-l pl-3 border-gray-100">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-purple-600">
+                      {teacher.user_type === 'court_owner' ? 'Dono de Quadra' : 'Professor'}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <button 
-              onClick={() => toggleTeacherStatus(teacher)}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                teacher.is_active !== false 
-                  ? 'bg-red-50 text-red-600 hover:bg-red-100' 
-                  : 'bg-green-50 text-green-600 hover:bg-green-100'
-              }`}
-            >
-              {teacher.is_active !== false ? 'Desativar Acesso' : 'Ativar Acesso'}
-            </button>
+            <div className="flex items-center gap-2">
+              <div className="flex bg-gray-50 p-1 rounded-xl">
+                <button
+                  onClick={() => changeUserType(teacher, 'professor')}
+                  className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${
+                    (teacher.user_type === 'professor' || !teacher.user_type)
+                      ? 'bg-white text-purple-600 shadow-sm'
+                      : 'text-gray-400 hover:text-gray-600'
+                  }`}
+                >
+                  Professor
+                </button>
+                <button
+                  onClick={() => changeUserType(teacher, 'court_owner')}
+                  className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${
+                    teacher.user_type === 'court_owner'
+                      ? 'bg-white text-purple-600 shadow-sm'
+                      : 'text-gray-400 hover:text-gray-600'
+                  }`}
+                >
+                  Dono
+                </button>
+              </div>
+
+              <button 
+                onClick={() => toggleTeacherStatus(teacher)}
+                className={`flex-1 md:flex-none px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                  teacher.is_active !== false 
+                    ? 'bg-red-50 text-red-600 hover:bg-red-100' 
+                    : 'bg-green-50 text-green-600 hover:bg-green-100'
+                }`}
+              >
+                {teacher.is_active !== false ? 'Desativar' : 'Ativar'}
+              </button>
+            </div>
           </div>
         ))}
 
         {teachers.length === 0 && (
           <div className="text-center py-12 text-gray-400 italic bg-gray-50 rounded-3xl">
-            Nenhum instrutor encontrado no sistema.
+            Nenhum usuário encontrado no sistema.
           </div>
         )}
       </div>
