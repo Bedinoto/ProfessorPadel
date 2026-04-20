@@ -2207,7 +2207,8 @@ function ScheduleManager({
                 {timeSlots.map(time => {
                   const isExistingInThisLocation = existingSlots.some(s => s.time === time);
                   const slotInOtherLocation = allSlotsForDate.find(s => s.time === time && s.location_id !== selectedLocation?.id);
-                  const isBusyElsewhere = !!slotInOtherLocation;
+                  // Donos de quadra podem ter múltiplos horários simultâneos (múltiplas quadras)
+                  const isBusyElsewhere = !!slotInOtherLocation && appSettings?.user_type !== 'court_owner';
                   const isSelected = availableTimes.includes(time);
                   
                   return (
@@ -2218,7 +2219,7 @@ function ScheduleManager({
                         if (isSelected) setAvailableTimes(availableTimes.filter(t => t !== time));
                         else setAvailableTimes([...availableTimes, time]);
                       }}
-                      title={isBusyElsewhere ? `Já ocupado em: ${locations.find(l => l.id === slotInOtherLocation?.location_id)?.name}` : ''}
+                      title={isBusyElsewhere ? `Você já tem aula marcada em: ${locations.find(l => l.id === slotInOtherLocation?.location_id)?.name}` : ''}
                       className={`p-2 rounded-lg text-xs font-bold transition-all ${
                         isExistingInThisLocation 
                           ? 'bg-green-50 text-green-600 border border-green-100 cursor-default' 
@@ -2238,9 +2239,11 @@ function ScheduleManager({
                 <div className="flex items-center gap-1 text-green-600">
                   <div className="w-2 h-2 bg-green-100 border border-green-200 rounded" /> Aberto aqui
                 </div>
-                <div className="flex items-center gap-1 text-red-400">
-                  <div className="w-2 h-2 bg-red-50 border border-red-100 rounded" /> Ocupado em outro local
-                </div>
+                {appSettings?.user_type !== 'court_owner' && (
+                  <div className="flex items-center gap-1 text-red-400">
+                    <div className="w-2 h-2 bg-red-50 border border-red-100 rounded" /> Ocupado em outro local
+                  </div>
+                )}
               </div>
             </div>
 
