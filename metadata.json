@@ -1,6 +1,6 @@
 {
-  "name": "Agenda do Professor",
-  "description": "Sistema completo para professores de Padel: agendamento em tempo real, controle de alunos e gestão financeira.",
+  "name": "Bora Pro Jogo",
+  "description": "Sistema completo para gestão de esportes de raquete: agendamento em tempo real, controle de clientes e gestão financeira para professores e donos de quadra.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }
