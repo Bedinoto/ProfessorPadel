@@ -409,7 +409,7 @@ function PublicBooking({ onTeacherNameFetched }: { onTeacherNameFetched?: (name:
     
     const formatDate = (date: Date) => format(date, "yyyyMMdd'T'HHmmss");
     
-    const title = encodeURIComponent(`Aula de Tênis/Beach Tennis - ${lastBooking.teacher_name}`);
+    const title = encodeURIComponent(`Aula de Padel/Beach Tennis - ${lastBooking.teacher_name}`);
     const dates = `${formatDate(startDate)}/${formatDate(endDate)}`;
     const details = encodeURIComponent(`Tipo: ${lastBooking.booking_type}\nAluno: ${lastBooking.student_name}\n\nAgendado via App de Aulas.`);
     const location = encodeURIComponent(lastBooking.location_name);
