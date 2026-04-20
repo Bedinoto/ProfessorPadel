@@ -2093,8 +2093,7 @@ function ScheduleManager({
         return acc;
       }, {} as Record<string, string[]>);
 
-      let report = `📅 Horários disponíveis para Aulas\n👤 Instrutor: ${teacherName}\n📍 ${selectedLocation.name}\n\n`;
-      
+      let horariosText = '';
       for (let i = 0; i < duration; i++) {
         const date = addDays(startDateReport, i);
         if (date < today) continue;
@@ -2103,24 +2102,33 @@ function ScheduleManager({
         const daySlots = grouped[dateStr] || [];
         
         const dayName = format(date, "EEEE dd/MM", { locale: ptBR });
-        // Uppercase first letter
         const capitalizedDay = dayName.charAt(0).toUpperCase() + dayName.slice(1);
         
-        report += `🎾 ${capitalizedDay}:\n`;
-        
+        horariosText += `🎾 ${capitalizedDay}:\n`;
         if (daySlots.length === 0) {
-          report += `❌\n`;
+          horariosText += `❌\n`;
         } else {
-          // Add a newline before times as in example
-          report += `\n${daySlots.map(t => t.replace(':00', 'h')).join('\n')}\n`;
+          horariosText += `\n${daySlots.map(t => t.replace(':00', 'h')).join('\n')}\n`;
         }
-        report += '\n';
+        horariosText += '\n';
       }
 
       const bookingLink = `${window.location.origin}/?loc=${selectedLocation.id}&prof=${encodeURIComponent(teacherName)}`;
-      report += `📅 Hora de agendar sua aula!\n\nEscolha seu melhor horário diretamente pelo link:\n👉 ${bookingLink}\n\nOu, se preferir, me envie uma mensagem aqui no WhatsApp. Vamos evoluir juntos!`;
+      
+      let finalReport = '';
+      if (appSettings?.whatsapp_template) {
+        finalReport = appSettings.whatsapp_template
+          .split('{instrutor}').join(teacherName)
+          .split('{local}').join(selectedLocation.name)
+          .split('{link}').join(bookingLink)
+          .split('{horarios}').join(horariosText.trim());
+      } else {
+        const header = `📅 Horários disponíveis para Aulas\n👤 Instrutor: ${teacherName}\n📍 ${selectedLocation.name}\n\n`;
+        const footer = `📅 Hora de agendar sua aula!\n\nEscolha seu melhor horário diretamente pelo link:\n👉 ${bookingLink}\n\nOu, se preferir, me envie uma mensagem aqui no WhatsApp. Vamos evoluir juntos!`;
+        finalReport = header + horariosText + footer;
+      }
 
-      await navigator.clipboard.writeText(report.trim());
+      await navigator.clipboard.writeText(finalReport.trim());
       setToast({ message: "Agenda da semana copiada!", type: 'success' });
       
     } catch (error) {
@@ -2406,6 +2414,7 @@ function SettingsManager({ user, setToast }: { user: any, setToast: (t: any) => 
   const [agendaDuration, setAgendaDuration] = useState(7);
   const [bookingTypes, setBookingTypes] = useState<BookingType[]>([]);
   const [userType, setUserType] = useState<'professor' | 'court_owner'>('professor');
+  const [whatsappTemplate, setWhatsappTemplate] = useState('');
   const [newTypeName, setNewTypeName] = useState('');
   const [newTypePrice, setNewTypePrice] = useState('');
   const [loading, setLoading] = useState(false);
@@ -2424,6 +2433,7 @@ function SettingsManager({ user, setToast }: { user: any, setToast: (t: any) => 
         setAgendaDuration(data.agenda_duration || 7);
         setBookingTypes(data.booking_types || DEFAULT_BOOKING_TYPES);
         setUserType(data.user_type || 'professor');
+        setWhatsappTemplate(data.whatsapp_template || '');
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'settings'));
     return () => unsubscribe();
@@ -2441,7 +2451,8 @@ function SettingsManager({ user, setToast }: { user: any, setToast: (t: any) => 
         whatsapp_enabled: whatsappEnabled,
         booking_types: bookingTypes,
         agenda_start_day: agendaStartDay,
-        agenda_duration: agendaDuration
+        agenda_duration: agendaDuration,
+        whatsapp_template: whatsappTemplate.trim()
       });
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 3000);
@@ -2595,6 +2606,29 @@ function SettingsManager({ user, setToast }: { user: any, setToast: (t: any) => 
                 value={agendaDuration}
                 onChange={e => setAgendaDuration(Number(e.target.value))}
               />
+            </div>
+          </div>
+
+          <div className="space-y-4 pt-6 border-t">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-gray-400 uppercase tracking-widest px-1">Modelo de Mensagem (Postar WhatsApp)</label>
+              <div className="text-[10px] text-green-600 font-bold bg-green-50 px-2 py-0.5 rounded-full uppercase tracking-tighter">Personalizável</div>
+            </div>
+            <textarea 
+              rows={5}
+              placeholder={`Ex:\nOlá! Esta é a agenda de {local}.\nPara agendar com {instrutor} acesse:\n{link}\n\nHorários:\n{horarios}`}
+              className="w-full px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none text-sm font-sans resize-none"
+              value={whatsappTemplate}
+              onChange={e => setWhatsappTemplate(e.target.value)}
+            />
+            <div className="bg-blue-50 p-3 rounded-xl space-y-2">
+              <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Como usar as Tags:</p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                <span className="text-[10px] text-blue-600"><b>{`{instrutor}`}</b>: Seu nome</span>
+                <span className="text-[10px] text-blue-600"><b>{`{local}`}</b>: Nome do local</span>
+                <span className="text-[10px] text-blue-600"><b>{`{link}`}</b>: Link de agendamento</span>
+                <span className="text-[10px] text-blue-600"><b>{`{horarios}`}</b>: Lista das datas e horas</span>
+              </div>
             </div>
           </div>
 
