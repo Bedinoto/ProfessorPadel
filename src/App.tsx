@@ -40,7 +40,8 @@ import {
   Star,
   ShoppingBasket,
   ShieldCheck,
-  ShieldAlert
+  ShieldAlert,
+  Percent
 } from 'lucide-react';
 import { format, addDays, startOfToday, isSameDay, parseISO, startOfWeek, endOfWeek } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -111,7 +112,7 @@ export default function App() {
   const [user, setUser] = useState<any>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [activeTeacherName, setActiveTeacherName] = useState('');
-  const [activeUserType, setActiveUserType] = useState<'professor' | 'court_owner'>('professor');
+  const [activeUserType, setActiveUserType] = useState<'professor' | 'court_owner' | null>(null);
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error' | 'info'} | null>(null);
 
   useEffect(() => {
@@ -179,20 +180,14 @@ export default function App() {
           >
             <img src={logo} alt="Logo" className="h-full w-auto object-contain" />
             
-            <div className="flex items-center border-l sm:border-l-2 border-gray-100 pl-2 sm:pl-4 h-6 md:h-10 lg:h-12 mt-0.5 sm:mt-1">
-              <h1 className="font-black text-[10px] md:text-lg lg:text-xl tracking-tight whitespace-nowrap overflow-hidden text-ellipsis uppercase">
-                {activeTeacherName ? (
-                  <>
-                    {activeUserType === 'court_owner' ? '' : 'Instrutor '}
-                    <span className="text-green-600">{activeTeacherName}</span>
-                  </>
-                ) : (
-                  <span className="text-gray-400 text-[8px] md:text-sm">
-                    Bora Pro Jogo
-                  </span>
-                )}
-              </h1>
-            </div>
+            {activeTeacherName && (
+              <div className="flex items-center border-l sm:border-l-2 border-gray-100 pl-2 sm:pl-4 h-6 md:h-10 lg:h-12 mt-0.5 sm:mt-1">
+                <h1 className="font-black text-[10px] md:text-lg lg:text-xl tracking-tight whitespace-nowrap overflow-hidden text-ellipsis uppercase">
+                  {activeUserType === 'professor' ? 'Instrutor ' : ''}
+                  <span className="text-green-600">{activeTeacherName}</span>
+                </h1>
+              </div>
+            )}
           </div>
 
           <div className="hidden md:flex items-center gap-6 ml-8">
@@ -526,8 +521,8 @@ function PublicBooking({
       // Send WhatsApp Notification
       try {
         if (appSettings?.whatsapp_enabled !== false) {
-          const instructorLabel = appSettings?.user_type === 'court_owner' ? 'Responsável' : 'Instrutor';
-          const instructorName = appSettings?.teacher_name || (appSettings?.user_type === 'court_owner' ? 'Responsável' : 'Instrutor');
+          const instructorLabel = appSettings?.user_type === 'court_owner' ? 'Responsável' : 'Nome';
+          const instructorName = appSettings?.teacher_name || (appSettings?.user_type === 'court_owner' ? 'Responsável' : 'Nome');
           const bookingLabel = appSettings?.user_type === 'court_owner' ? 'Reserva de Quadra' : 'Reserva de Aula';
           const userLabel = appSettings?.user_type === 'court_owner' ? 'Cliente' : 'Aluno';
           
@@ -660,12 +655,20 @@ function PublicBooking({
     >
       <div className="text-center space-y-2">
         <h2 className="text-3xl font-bold tracking-tight">
-          {appSettings?.user_type === 'court_owner' ? 'Reserve sua Quadra' : 'Reserve sua Aula'}
+          {!appSettings ? (
+            <div className="h-9 w-48 bg-gray-200 animate-pulse mx-auto rounded-lg"></div>
+          ) : (
+            appSettings.user_type === 'court_owner' ? 'Reserve sua Quadra' : 'Reserve sua Aula'
+          )}
         </h2>
         <p className="text-gray-500">
-          {appSettings?.user_type === 'court_owner' 
-            ? 'Escolha a quadra e o horário para o seu jogo!' 
-            : 'Escolha o local e horário para começar a treinar!'}
+          {!appSettings ? (
+            <div className="h-5 w-64 bg-gray-100 animate-pulse mx-auto rounded-md mt-2"></div>
+          ) : (
+            appSettings.user_type === 'court_owner' 
+              ? 'Escolha a quadra e o horário para o seu jogo!' 
+              : 'Escolha o local e horário para começar a treinar!'
+          )}
         </p>
       </div>
 
@@ -2192,13 +2195,14 @@ function ScheduleManager({
       let finalReport = '';
       if (appSettings?.whatsapp_template) {
         finalReport = appSettings.whatsapp_template
-          .split('{instrutor}').join(teacherName)
+          .split('{nome}').join(teacherName)
+          .split('{instrutor}').join(teacherName) // Fallback for backward compatibility if needed, but the request says change.
           .split('{local}').join(selectedLocation.name)
           .split('{link}').join(bookingLink)
           .split('{horarios}').join(horariosText.trim());
       } else {
         const title = appSettings?.user_type === 'court_owner' ? 'Horários disponíveis' : 'Horários disponíveis para Aulas';
-        const label = appSettings?.user_type === 'court_owner' ? 'Responsável' : 'Instrutor';
+        const label = appSettings?.user_type === 'court_owner' ? 'Responsável' : 'Nome';
         const footerTitle = appSettings?.user_type === 'court_owner' ? 'Hora de reservar sua quadra!' : 'Hora de agendar sua aula!';
         const cta = appSettings?.user_type === 'court_owner' ? 'Escolha seu melhor horário' : 'Escolha seu melhor horário diretamente pelo link';
         
@@ -2598,40 +2602,7 @@ function SettingsManager({ user, setToast }: { user: any, setToast: (t: any) => 
             </div>
           </div>
 
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-gray-400 uppercase">Número do WhatsApp (Destino das Notificações)</label>
-              <button
-                type="button"
-                onClick={() => setWhatsappEnabled(!whatsappEnabled)}
-                className={`flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-bold transition-all ${
-                  whatsappEnabled 
-                    ? 'bg-green-100 text-green-600 border border-green-200' 
-                    : 'bg-red-100 text-red-600 border border-red-200'
-                }`}
-              >
-                {whatsappEnabled ? (
-                  <><CheckCircle size={12} /> ATIVO</>
-                ) : (
-                  <><XCircle size={12} /> INATIVO</>
-                )}
-              </button>
-            </div>
-            <div className="relative">
-              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-              <input 
-                required
-                type="tel"
-                placeholder="Ex: 555599731123"
-                className={`w-full pl-10 pr-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none transition-opacity ${!whatsappEnabled ? 'opacity-50' : ''}`}
-                value={whatsappNumber}
-                onChange={e => setWhatsappNumber(e.target.value)}
-              />
-            </div>
-            <p className="text-[10px] text-gray-400">Insira o número completo com DDI (Ex: 55 para Brasil), DDD e o número.</p>
-          </div>
-
-          <div className="space-y-2">
+          <div className="space-y-2 pt-2 border-t">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-gray-400 uppercase">Google Scripts URL (Integração Agenda)</label>
               <button 
@@ -2658,6 +2629,63 @@ function SettingsManager({ user, setToast }: { user: any, setToast: (t: any) => 
               />
             </div>
             <p className="text-[10px] text-gray-400">URL do Web App implantado no Google Apps Script.</p>
+          </div>
+
+          <div className="space-y-2 pt-2 border-t">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-gray-400 uppercase">Número do WhatsApp (Vendas na Loja e Notificações)</label>
+              <button
+                type="button"
+                onClick={() => setWhatsappEnabled(!whatsappEnabled)}
+                className={`flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-bold transition-all ${
+                  whatsappEnabled 
+                    ? 'bg-green-100 text-green-600 border border-green-200' 
+                    : 'bg-red-100 text-red-600 border border-red-200'
+                }`}
+              >
+                {whatsappEnabled ? (
+                  <><CheckCircle size={12} /> ATIVO</>
+                ) : (
+                  <><XCircle size={12} /> INATIVO</>
+                )}
+              </button>
+            </div>
+            <div className="relative">
+              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+              <input 
+                required
+                type="tel"
+                placeholder="Ex: 555599731123"
+                className={`w-full pl-10 pr-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none transition-all ${!whatsappEnabled ? 'ring-1 ring-red-200' : ''}`}
+                value={whatsappNumber}
+                onChange={e => setWhatsappNumber(e.target.value)}
+              />
+            </div>
+            <p className="text-[10px] text-gray-400">Este número receberá os pedidos da loja e as notificações de agendamento.</p>
+          </div>
+
+          <div className="space-y-4 pt-2 border-t">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-gray-400 uppercase tracking-widest px-1">Modelo de Mensagem (Postar WhatsApp)</label>
+              <div className="text-[10px] text-green-600 font-bold bg-green-50 px-2 py-0.5 rounded-full uppercase tracking-tighter">Personalizável</div>
+            </div>
+            <textarea 
+              rows={5}
+              placeholder={`Ex:\nOlá! Esta é a agenda de {local}.\nPara agendar com {nome} acesse:\n{link}\n\nHorários:\n{horarios}`}
+              className="w-full px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none text-sm font-sans resize-none transition-opacity"
+              style={{ opacity: whatsappEnabled ? 1 : 0.5 }}
+              value={whatsappTemplate}
+              onChange={e => setWhatsappTemplate(e.target.value)}
+            />
+            <div className="bg-blue-50 p-3 rounded-xl space-y-2">
+              <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Como usar as Tags:</p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                <span className="text-[10px] text-blue-600"><b>{`{nome}`}</b>: Seu nome</span>
+                <span className="text-[10px] text-blue-600"><b>{`{local}`}</b>: Nome do local</span>
+                <span className="text-[10px] text-blue-600"><b>{`{link}`}</b>: Link de agendamento</span>
+                <span className="text-[10px] text-blue-600"><b>{`{horarios}`}</b>: Lista das datas e horas</span>
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4 pt-4 border-t">
@@ -2687,29 +2715,6 @@ function SettingsManager({ user, setToast }: { user: any, setToast: (t: any) => 
                 value={agendaDuration}
                 onChange={e => setAgendaDuration(Number(e.target.value))}
               />
-            </div>
-          </div>
-
-          <div className="space-y-4 pt-6 border-t">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-gray-400 uppercase tracking-widest px-1">Modelo de Mensagem (Postar WhatsApp)</label>
-              <div className="text-[10px] text-green-600 font-bold bg-green-50 px-2 py-0.5 rounded-full uppercase tracking-tighter">Personalizável</div>
-            </div>
-            <textarea 
-              rows={5}
-              placeholder={`Ex:\nOlá! Esta é a agenda de {local}.\nPara agendar com {instrutor} acesse:\n{link}\n\nHorários:\n{horarios}`}
-              className="w-full px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none text-sm font-sans resize-none"
-              value={whatsappTemplate}
-              onChange={e => setWhatsappTemplate(e.target.value)}
-            />
-            <div className="bg-blue-50 p-3 rounded-xl space-y-2">
-              <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Como usar as Tags:</p>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-                <span className="text-[10px] text-blue-600"><b>{`{instrutor}`}</b>: Seu nome</span>
-                <span className="text-[10px] text-blue-600"><b>{`{local}`}</b>: Nome do local</span>
-                <span className="text-[10px] text-blue-600"><b>{`{link}`}</b>: Link de agendamento</span>
-                <span className="text-[10px] text-blue-600"><b>{`{horarios}`}</b>: Lista das datas e horas</span>
-              </div>
             </div>
           </div>
 
@@ -2932,7 +2937,60 @@ function respond(result, callback) {
 function ProductManager({ user, setToast }: { user: any, setToast: (t: any) => void }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Partial<Product> | null>(null);
+  const [confirmConfig, setConfirmConfig] = useState<{
+    isOpen: boolean,
+    title: string,
+    message: string,
+    onConfirm: () => void,
+    type: 'danger' | 'success',
+    confirmText: string
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+    type: 'danger',
+    confirmText: 'Confirmar'
+  });
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      setToast({ message: 'Imagem muito grande (máx 5MB)', type: 'error' });
+      return;
+    }
+
+    setUploading(true);
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const response = await fetch('/api/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            image: reader.result,
+            name: file.name
+          })
+        });
+        const data = await response.json();
+        if (data.url) {
+          setEditingProduct(prev => ({ ...prev, image_url: data.url }));
+          setToast({ message: 'Imagem carregada!', type: 'success' });
+        } else {
+          throw new Error(data.error || 'Erro no upload');
+        }
+      } catch (error) {
+        setToast({ message: 'Falha no upload da imagem', type: 'error' });
+      } finally {
+        setUploading(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   useEffect(() => {
     const q = query(collection(db, 'products'), where('teacher_id', '==', user.uid));
@@ -2969,13 +3027,23 @@ function ProductManager({ user, setToast }: { user: any, setToast: (t: any) => v
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir este produto?')) return;
-    try {
-      await deleteDoc(doc(db, 'products', id));
-      setToast({ message: 'Produto excluído!', type: 'success' });
-    } catch (error) {
-      setToast({ message: 'Erro ao excluir produto', type: 'error' });
-    }
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Excluir Produto',
+      message: 'Tem certeza que deseja excluir este produto? Esta ação não pode ser desfeita.',
+      type: 'danger',
+      confirmText: 'Excluir Produto',
+      onConfirm: async () => {
+        try {
+          await deleteDoc(doc(db, 'products', id));
+          setToast({ message: 'Produto excluído!', type: 'success' });
+        } catch (error) {
+          setToast({ message: 'Erro ao excluir produto', type: 'error' });
+        } finally {
+          setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
   };
 
   if (loading) return <div className="flex justify-center p-12"><Loader2 className="animate-spin text-green-600" /></div>;
@@ -2988,7 +3056,7 @@ function ProductManager({ user, setToast }: { user: any, setToast: (t: any) => v
           Gerenciar Produtos
         </h3>
         <button 
-          onClick={() => setEditingProduct({ name: '', price: 0, category: 'Raquetes', description: '', image_url: '' })}
+          onClick={() => setEditingProduct({ name: '', price: 0, category: 'Raquetes', description: '', image_url: '', pix_discount: 0 })}
           className="bg-green-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-green-700 transition-all text-sm"
         >
           <Plus size={18} /> Novo Produto
@@ -3041,9 +3109,9 @@ function ProductManager({ user, setToast }: { user: any, setToast: (t: any) => v
                 {editingProduct.id ? 'Editar Produto' : 'Novo Produto'}
               </h3>
               <form onSubmit={handleSave} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-4">
                   <div className="space-y-1">
-                    <label className="text-xs font-bold text-gray-500 uppercase">Nome</label>
+                    <label className="text-xs font-bold text-gray-500 uppercase">Nome do Produto</label>
                     <input 
                       type="text" 
                       required
@@ -3052,16 +3120,45 @@ function ProductManager({ user, setToast }: { user: any, setToast: (t: any) => v
                       className="w-full p-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-green-500 outline-none"
                     />
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-gray-500 uppercase">Preço (R$)</label>
-                    <input 
-                      type="number" 
-                      required
-                      step="0.01"
-                      value={editingProduct.price}
-                      onChange={e => setEditingProduct({...editingProduct, price: parseFloat(e.target.value)})}
-                      className="w-full p-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-green-500 outline-none"
-                    />
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-gray-500 uppercase">Preço (R$)</label>
+                      <input 
+                        type="number" 
+                        required
+                        step="0.01"
+                        value={editingProduct.price}
+                        onChange={e => setEditingProduct({...editingProduct, price: parseFloat(e.target.value)})}
+                        className="w-full p-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-green-500 outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-gray-500 uppercase">% Desconto PIX</label>
+                      <div className="relative">
+                        <Percent className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
+                        <input 
+                          type="number" 
+                          value={editingProduct.pix_discount === undefined ? '' : editingProduct.pix_discount}
+                          onChange={e => setEditingProduct({...editingProduct, pix_discount: e.target.value === '' ? undefined : parseFloat(e.target.value)})}
+                          placeholder="Ex: 10"
+                          className="w-full p-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-green-500 outline-none"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-gray-500 uppercase">WhatsApp (Opcional)</label>
+                      <div className="relative">
+                        <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
+                        <input 
+                          type="tel" 
+                          placeholder="Ex: 55..."
+                          value={editingProduct.whatsapp_number || ''}
+                          onChange={e => setEditingProduct({...editingProduct, whatsapp_number: e.target.value})}
+                          className="w-full pl-9 pr-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-green-500 outline-none text-xs"
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div className="space-y-1">
@@ -3080,13 +3177,56 @@ function ProductManager({ user, setToast }: { user: any, setToast: (t: any) => v
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-gray-500 uppercase">URL da Imagem</label>
-                  <input 
-                    type="url" 
-                    value={editingProduct.image_url}
-                    onChange={e => setEditingProduct({...editingProduct, image_url: e.target.value})}
-                    className="w-full p-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-green-500 outline-none"
-                  />
+                  <label className="text-xs font-bold text-gray-500 uppercase">Imagem do Produto</label>
+                  <div className="flex flex-col gap-3">
+                    {editingProduct.image_url && (
+                      <div className="relative w-20 h-20 bg-gray-50 rounded-xl overflow-hidden border border-gray-100">
+                        <img 
+                          src={editingProduct.image_url.startsWith('http') ? editingProduct.image_url : `${window.location.origin}${editingProduct.image_url}`} 
+                          className="w-full h-full object-contain" 
+                          referrerPolicy="no-referrer"
+                        />
+                        <button 
+                          type="button" 
+                          onClick={() => setEditingProduct({...editingProduct, image_url: ''})}
+                          className="absolute inset-0 bg-black/40 flex items-center justify-center text-white opacity-0 hover:opacity-100 transition-opacity"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    )}
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="relative">
+                        <input 
+                          type="file" 
+                          accept="image/*"
+                          onChange={handleImageUpload}
+                          className="hidden" 
+                          id="product-image-upload"
+                          disabled={uploading}
+                        />
+                        <label 
+                          htmlFor="product-image-upload"
+                          className={`w-full p-3 rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center gap-1 cursor-pointer hover:border-green-400 hover:bg-green-50 transition-all ${uploading ? 'opacity-50 cursor-wait' : ''}`}
+                        >
+                          {uploading ? <Loader2 className="animate-spin text-green-600" size={16} /> : <Plus className="text-gray-400" size={16} />}
+                          <span className="text-[10px] font-bold text-gray-500">{uploading ? 'ENVIANDO...' : 'UPLOAD FOTO'}</span>
+                        </label>
+                      </div>
+
+                      <div className="relative">
+                        <ExternalLink className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
+                        <input 
+                          type="text" 
+                          placeholder="Ou cole a URL aqui..."
+                          value={editingProduct.image_url}
+                          onChange={e => setEditingProduct({...editingProduct, image_url: e.target.value})}
+                          className="w-full pl-9 pr-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-green-500 outline-none text-xs"
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-gray-500 uppercase">Descrição</label>
@@ -3127,6 +3267,11 @@ function ProductManager({ user, setToast }: { user: any, setToast: (t: any) => v
           </div>
         )}
       </AnimatePresence>
+
+      <ConfirmModal 
+        {...confirmConfig} 
+        onClose={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))} 
+      />
     </div>
   );
 }
@@ -3136,6 +3281,7 @@ function Shop({ setToast }: { setToast: (t: any) => void }) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('TODOS');
+  const [viewingProduct, setViewingProduct] = useState<Product | null>(null);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
   const [params] = useState(() => new URLSearchParams(window.location.search));
   const teacherId = params.get('loc');
@@ -3180,7 +3326,7 @@ function Shop({ setToast }: { setToast: (t: any) => void }) {
   const handleBuy = (product: Product) => {
     const whatsapp = product.whatsapp_number || appSettings?.whatsapp_number;
     if (!whatsapp) {
-      setToast({ message: 'Número de WhatsApp do instrutor não configurado.', type: 'error' });
+      setToast({ message: 'Número de WhatsApp não configurado! Vá em Painel > Configurações para definir o número de destino das vendas.', type: 'error' });
       return;
     }
 
@@ -3245,7 +3391,10 @@ function Shop({ setToast }: { setToast: (t: any) => void }) {
             animate={{ opacity: 1, y: 0 }}
             className="bg-white rounded-3xl border border-gray-100 overflow-hidden shadow-sm hover:shadow-xl transition-all group flex flex-col h-full"
           >
-            <div className="aspect-square bg-gray-50 relative overflow-hidden flex items-center justify-center p-6">
+            <div 
+              className="aspect-square bg-gray-50 relative overflow-hidden flex items-center justify-center p-6 cursor-pointer"
+              onClick={() => setViewingProduct(product)}
+            >
               {product.highlighted && (
                 <div className="absolute top-4 left-4 bg-red-500 text-white text-[10px] font-black px-2 py-1 rounded flex items-center gap-1 z-10 uppercase">
                   <Star size={10} fill="currentColor" /> Destaque
@@ -3264,16 +3413,24 @@ function Shop({ setToast }: { setToast: (t: any) => void }) {
             </div>
             <div className="p-6 flex flex-col flex-1 space-y-2">
               <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{product.category}</span>
-              <h4 className="font-bold text-gray-900 line-clamp-2 min-h-[3rem] leading-tight group-hover:text-green-600 transition-colors uppercase">
+              <h4 
+                className="font-bold text-gray-900 line-clamp-2 min-h-[3rem] leading-tight group-hover:text-green-600 transition-colors uppercase cursor-pointer"
+                onClick={() => setViewingProduct(product)}
+              >
                 {product.name}
               </h4>
               <div className="pt-2 mt-auto">
                 <div className="text-2xl font-black text-gray-900">
                   R$ {product.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                 </div>
-                <div className="text-xs text-green-600 font-bold mb-4">
-                  R$ {(product.price * 0.9).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} com Pix
-                </div>
+                {product.pix_discount && product.pix_discount > 0 && (
+                  <div className="text-xs text-green-600 font-bold mb-4">
+                    R$ {(product.price * (1 - product.pix_discount / 100)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} com Pix
+                  </div>
+                )}
+                {(!product.pix_discount || product.pix_discount <= 0) && (
+                   <div className="mb-4 h-4"></div>
+                )}
                 <button 
                   onClick={() => handleBuy(product)}
                   className="w-full py-3 bg-purple-600 text-white font-black rounded-xl hover:bg-purple-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-purple-100 group-active:scale-95 text-xs uppercase"
@@ -3291,6 +3448,104 @@ function Shop({ setToast }: { setToast: (t: any) => void }) {
           Nenhum produto encontrado na busca ou categoria selecionada.
         </div>
       )}
+
+      {/* Product Detail Modal */}
+      <AnimatePresence>
+        {viewingProduct && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="bg-white rounded-[2.5rem] w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col md:flex-row max-h-[90vh]"
+            >
+              <div className="md:w-1/2 bg-gray-50 relative p-8 flex items-center justify-center border-b md:border-b-0 md:border-r border-gray-100">
+                <button 
+                  onClick={() => setViewingProduct(null)}
+                  className="absolute top-6 left-6 p-3 bg-white rounded-2xl text-gray-400 hover:text-gray-600 shadow-sm z-10 md:hidden"
+                >
+                  <ChevronLeft size={24} />
+                </button>
+                
+                {viewingProduct.image_url ? (
+                  <img 
+                    src={viewingProduct.image_url} 
+                    alt={viewingProduct.name} 
+                    className="max-w-full max-h-full object-contain"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <Package size={128} className="text-gray-200" />
+                )}
+                
+                {viewingProduct.highlighted && (
+                  <div className="absolute top-6 right-6 bg-red-500 text-white text-[10px] font-black px-3 py-1.5 rounded-full flex items-center gap-1 uppercase tracking-widest">
+                    <Star size={12} fill="currentColor" /> Destaque
+                  </div>
+                )}
+              </div>
+
+              <div className="md:w-1/2 p-8 md:p-12 flex flex-col overflow-y-auto">
+                <div className="flex justify-between items-start mb-4">
+                  <span className="text-xs font-black text-green-600 uppercase tracking-[0.2em]">
+                    {viewingProduct.category}
+                  </span>
+                  <button 
+                    onClick={() => setViewingProduct(null)}
+                    className="hidden md:block p-2 text-gray-300 hover:text-gray-500 transition-colors"
+                  >
+                    <XCircle size={24} />
+                  </button>
+                </div>
+
+                <h2 className="text-3xl font-black text-gray-900 leading-tight mb-6 uppercase">
+                  {viewingProduct.name}
+                </h2>
+
+                <div className="space-y-6 flex-1">
+                  <div className="space-y-2">
+                    <h5 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Descrição</h5>
+                    <p className="text-gray-600 leading-relaxed text-sm whitespace-pre-wrap">
+                      {viewingProduct.description || "Nenhuma descrição detalhada disponível para este produto."}
+                    </p>
+                  </div>
+
+                  <div className="p-6 bg-green-50 rounded-3xl space-y-4">
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-3xl font-black text-gray-900">
+                        R$ {viewingProduct.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    {viewingProduct.pix_discount && viewingProduct.pix_discount > 0 && (
+                      <div className="flex items-center gap-2 text-green-700">
+                        <div className="bg-green-600 text-white p-1 rounded font-bold text-[10px] uppercase">{viewingProduct.pix_discount}% OFF</div>
+                        <span className="font-bold text-sm">
+                          R$ {(viewingProduct.price * (1 - viewingProduct.pix_discount / 100)).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} no PIX
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-8 grid grid-cols-2 gap-4">
+                  <button 
+                    onClick={() => setViewingProduct(null)}
+                    className="py-4 rounded-2xl font-black text-gray-500 bg-gray-100 hover:bg-gray-200 transition-all uppercase text-xs tracking-widest"
+                  >
+                    Voltar
+                  </button>
+                  <button 
+                    onClick={() => { handleBuy(viewingProduct); setViewingProduct(null); }}
+                    className="py-4 bg-purple-600 text-white font-black rounded-2xl hover:bg-purple-700 transition-all flex items-center justify-center gap-2 shadow-xl shadow-purple-100 uppercase text-xs tracking-widest"
+                  >
+                    <MessageCircle size={16} /> Comprar agora
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

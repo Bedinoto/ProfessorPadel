@@ -68,4 +68,5 @@ export interface Product {
   whatsapp_number?: string;
   stock?: number;
   highlighted?: boolean;
+  pix_discount?: number;
 }
