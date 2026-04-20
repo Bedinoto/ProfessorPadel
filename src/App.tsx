@@ -100,6 +100,14 @@ export default function App() {
   const [user, setUser] = useState<any>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [activeTeacherName, setActiveTeacherName] = useState('');
+  const [toast, setToast] = useState<{message: string, type: 'success' | 'error' | 'info'} | null>(null);
+
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -181,7 +189,7 @@ export default function App() {
         <AnimatePresence mode="wait">
           {view === 'public' && (
             <motion.div key="public" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <PublicBooking onTeacherNameFetched={setActiveTeacherName} />
+              <PublicBooking onTeacherNameFetched={setActiveTeacherName} setToast={setToast} />
             </motion.div>
           )}
           {view === 'login' && (
@@ -191,18 +199,42 @@ export default function App() {
           )}
           {view === 'admin' && user && (
             <motion.div key="admin" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <AdminDashboard user={user} teacherName={activeTeacherName} />
+              <AdminDashboard user={user} teacherName={activeTeacherName} setToast={setToast} />
             </motion.div>
           )}
         </AnimatePresence>
       </main>
+
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: -50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -50, scale: 0.9 }}
+            className={`fixed top-8 left-1/2 -translate-x-1/2 px-6 py-3 rounded-2xl shadow-2xl z-[200] flex items-center gap-3 border transition-colors ${
+              toast.type === 'success' ? 'bg-green-600 border-green-500 text-white' : 
+              toast.type === 'info' ? 'bg-blue-600 border-blue-500 text-white' :
+              'bg-red-600 border-red-500 text-white'
+            }`}
+          >
+            {toast.type === 'success' ? <CheckCircle size={20} /> : <XCircle size={20} />}
+            <span className="font-bold text-sm text-white">{toast.message}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
 // --- COMPONENTS ---
 
-function PublicBooking({ onTeacherNameFetched }: { onTeacherNameFetched?: (name: string) => void }) {
+function PublicBooking({ 
+  onTeacherNameFetched,
+  setToast 
+}: { 
+  onTeacherNameFetched?: (name: string) => void,
+  setToast: (t: any) => void
+}) {
   const [locations, setLocations] = useState<Location[]>([]);
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
   const [selectedDate, setSelectedDate] = useState(startOfToday());
@@ -326,6 +358,13 @@ function PublicBooking({ onTeacherNameFetched }: { onTeacherNameFetched?: (name:
     e.preventDefault();
     if (!selectedSlot) return;
     
+    // Validate phone number length (only digits)
+    const phoneDigits = formData.phone.replace(/\D/g, '');
+    if (phoneDigits.length < 10 || phoneDigits.length > 11) {
+      setToast({ message: "O telefone deve ter entre 10 e 11 dígitos (com DDD).", type: 'error' });
+      return;
+    }
+
     setStatus('loading');
     try {
       const activeBookingTypes = appSettings?.booking_types || DEFAULT_BOOKING_TYPES;
@@ -643,6 +682,7 @@ function PublicBooking({ onTeacherNameFetched }: { onTeacherNameFetched?: (name:
                   onChange={e => setFormData({ ...formData, phone: e.target.value })}
                 />
               </div>
+              <p className="text-[10px] text-gray-400">Entre 10 e 11 dígitos (ex: 55999998888)</p>
             </div>
 
             <div className="space-y-1">
@@ -908,7 +948,7 @@ function ConfirmModal({
   );
 }
 
-function AdminDashboard({ user, teacherName }: { user: any, teacherName: string }) {
+function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherName: string, setToast: (t: any) => void }) {
   const [tab, setTab] = useState<'schedule' | 'bookings' | 'finance' | 'locations' | 'settings'>('schedule');
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [finance, setFinance] = useState<FinanceSummary | null>(null);
@@ -916,7 +956,6 @@ function AdminDashboard({ user, teacherName }: { user: any, teacherName: string 
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
   const [syncingIds, setSyncingIds] = useState<Set<string>>(new Set());
-  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'paid' | 'pending'>('all');
@@ -935,13 +974,6 @@ function AdminDashboard({ user, teacherName }: { user: any, teacherName: string 
     type: 'danger',
     confirmText: 'Confirmar'
   });
-
-  useEffect(() => {
-    if (toast) {
-      const timer = setTimeout(() => setToast(null), 4000);
-      return () => clearTimeout(timer);
-    }
-  }, [toast]);
 
   useEffect(() => {
     // Fetch app settings for this teacher
@@ -1151,12 +1183,12 @@ function AdminDashboard({ user, teacherName }: { user: any, teacherName: string 
         )}
         {tab === 'locations' && (
           <motion.div key="locations" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <LocationManager user={user} />
+            <LocationManager user={user} setToast={setToast} />
           </motion.div>
         )}
         {tab === 'settings' && (
           <motion.div key="settings" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <SettingsManager user={user} />
+            <SettingsManager user={user} setToast={setToast} />
           </motion.div>
         )}
         {tab === 'bookings' && (
@@ -1546,24 +1578,6 @@ function AdminDashboard({ user, teacherName }: { user: any, teacherName: string 
             onSync={handleCalendarSync}
             appSettings={appSettings}
           />
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {toast && (
-          <motion.div
-            initial={{ opacity: 0, y: -50, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -50, scale: 0.9 }}
-            className={`fixed top-8 left-1/2 -translate-x-1/2 px-6 py-3 rounded-2xl shadow-2xl z-[200] flex items-center gap-3 border transition-colors ${
-              toast.type === 'success' ? 'bg-green-600 border-green-500 text-white' : 
-              toast.type === 'info' ? 'bg-blue-600 border-blue-500 text-white' :
-              'bg-red-600 border-red-500 text-white'
-            }`}
-          >
-            {toast.type === 'success' ? <CheckCircle size={20} /> : <XCircle size={20} />}
-            <span className="font-bold text-sm text-white">{toast.message}</span>
-          </motion.div>
         )}
       </AnimatePresence>
     </div>
@@ -2151,7 +2165,7 @@ function ScheduleManager({
   );
 }
 
-function LocationManager({ user }: { user: any }) {
+function LocationManager({ user, setToast }: { user: any, setToast: (t: any) => void }) {
   const [locations, setLocations] = useState<Location[]>([]);
   const [newName, setNewName] = useState('');
 
@@ -2248,7 +2262,7 @@ function LocationManager({ user }: { user: any }) {
   );
 }
 
-function SettingsManager({ user }: { user: any }) {
+function SettingsManager({ user, setToast }: { user: any, setToast: (t: any) => void }) {
   const [teacherName, setTeacherName] = useState('');
   const [whatsappNumber, setWhatsappNumber] = useState('');
   const [googleScriptUrl, setGoogleScriptUrl] = useState('');
