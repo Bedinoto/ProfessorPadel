@@ -52,3 +52,16 @@ export interface AppSettings {
   agenda_start_day?: number; // 0 (Sun) to 6 (Sat)
   agenda_duration?: number; // Number of days to show
 }
+
+export interface Product {
+  id: string;
+  teacher_id: string;
+  name: string;
+  price: number;
+  description: string;
+  image_url: string;
+  category: string;
+  whatsapp_number?: string;
+  stock?: number;
+  highlighted?: boolean;
+}

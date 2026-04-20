@@ -30,11 +30,18 @@ import {
   Copy,
   ExternalLink,
   AlertCircle,
-  MessageCircle
+  MessageCircle,
+  ShoppingBag,
+  Tag,
+  Search,
+  Filter,
+  Package,
+  Star,
+  ShoppingBasket
 } from 'lucide-react';
 import { format, addDays, startOfToday, isSameDay, parseISO, startOfWeek, endOfWeek } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Slot, Booking, FinanceSummary, Location, AppSettings, BookingType } from './types';
+import { Slot, Booking, FinanceSummary, Location, AppSettings, BookingType, Product } from './types';
 import { 
   auth, 
   db, 
@@ -54,7 +61,8 @@ import {
   query, 
   where, 
   orderBy, 
-  onSnapshot 
+  onSnapshot,
+  limit
 } from './firebase';
 
 // --- ERROR HANDLING ---
@@ -96,7 +104,7 @@ const DEFAULT_BOOKING_TYPES = [
 ];
 
 export default function App() {
-  const [view, setView] = useState<'public' | 'login' | 'admin'>('public');
+  const [view, setView] = useState<'public' | 'login' | 'admin' | 'shop'>('public');
   const [user, setUser] = useState<any>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [activeTeacherName, setActiveTeacherName] = useState('');
@@ -115,7 +123,9 @@ export default function App() {
       setIsAuthReady(true);
       
       // Hidden access via /admin or if already authenticated
-      if (currentUser || window.location.pathname === '/admin') {
+      if (window.location.pathname === '/loja') {
+        setView('shop');
+      } else if (currentUser || window.location.pathname === '/admin') {
         setView(currentUser ? 'admin' : 'login');
       }
     });
@@ -163,8 +173,32 @@ export default function App() {
               )}
             </h1>
           </div>
+
+          <div className="hidden md:flex items-center gap-6 ml-8">
+            <button 
+              onClick={() => setView('public')}
+              className={`text-sm font-semibold transition-colors ${view === 'public' ? 'text-green-600' : 'text-gray-500 hover:text-green-500'}`}
+            >
+              Agenda
+            </button>
+            <button 
+              onClick={() => setView('shop')}
+              className={`text-sm font-semibold transition-colors ${view === 'shop' ? 'text-green-600' : 'text-gray-500 hover:text-green-500'}`}
+            >
+              Loja
+            </button>
+          </div>
           
           <div className="flex gap-4 items-center">
+            {!user && view !== 'login' && (
+              <button 
+                onClick={() => setView('shop')}
+                className="md:hidden p-2 text-gray-500 hover:text-green-600 transition-colors"
+                title="Loja"
+              >
+                <ShoppingBag size={20} />
+              </button>
+            )}
             {user && (
               <div className="flex items-center gap-4">
                 <button 
@@ -190,6 +224,11 @@ export default function App() {
           {view === 'public' && (
             <motion.div key="public" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
               <PublicBooking onTeacherNameFetched={setActiveTeacherName} setToast={setToast} />
+            </motion.div>
+          )}
+          {view === 'shop' && (
+            <motion.div key="shop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <Shop setToast={setToast} />
             </motion.div>
           )}
           {view === 'login' && (
@@ -949,7 +988,7 @@ function ConfirmModal({
 }
 
 function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherName: string, setToast: (t: any) => void }) {
-  const [tab, setTab] = useState<'schedule' | 'bookings' | 'finance' | 'locations' | 'settings'>('schedule');
+  const [tab, setTab] = useState<'schedule' | 'bookings' | 'finance' | 'locations' | 'settings' | 'products'>('schedule');
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [finance, setFinance] = useState<FinanceSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1167,6 +1206,12 @@ function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherNam
             Financeiro
           </button>
           <button 
+            onClick={() => setTab('products')}
+            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${tab === 'products' ? 'bg-green-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            Loja
+          </button>
+          <button 
             onClick={() => setTab('settings')}
             className={`px-4 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${tab === 'settings' ? 'bg-green-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-700'}`}
           >
@@ -1184,6 +1229,11 @@ function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherNam
         {tab === 'locations' && (
           <motion.div key="locations" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <LocationManager user={user} setToast={setToast} />
+          </motion.div>
+        )}
+        {tab === 'products' && (
+          <motion.div key="products" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <ProductManager user={user} setToast={setToast} />
           </motion.div>
         )}
         {tab === 'settings' && (
@@ -2655,6 +2705,373 @@ function respond(result, callback) {
           Entendi, pronto para configurar!
         </button>
       </motion.div>
+    </div>
+  );
+}
+
+// --- NEW STORE COMPONENTS ---
+
+function ProductManager({ user, setToast }: { user: any, setToast: (t: any) => void }) {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editingProduct, setEditingProduct] = useState<Partial<Product> | null>(null);
+
+  useEffect(() => {
+    const q = query(collection(db, 'products'), where('teacher_id', '==', user.uid));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
+      setProducts(docs);
+      setLoading(false);
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'products'));
+    return () => unsubscribe();
+  }, [user.uid]);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingProduct?.name || !editingProduct?.price) return;
+
+    try {
+      if (editingProduct.id) {
+        await updateDoc(doc(db, 'products', editingProduct.id), editingProduct);
+        setToast({ message: 'Produto atualizado!', type: 'success' });
+      } else {
+        const newDoc = doc(collection(db, 'products'));
+        await setDoc(newDoc, {
+          ...editingProduct,
+          id: newDoc.id,
+          teacher_id: user.uid,
+          created_at: new Date().toISOString()
+        });
+        setToast({ message: 'Produto criado!', type: 'success' });
+      }
+      setEditingProduct(null);
+    } catch (error) {
+      setToast({ message: 'Erro ao salvar produto', type: 'error' });
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Tem certeza que deseja excluir este produto?')) return;
+    try {
+      await deleteDoc(doc(db, 'products', id));
+      setToast({ message: 'Produto excluído!', type: 'success' });
+    } catch (error) {
+      setToast({ message: 'Erro ao excluir produto', type: 'error' });
+    }
+  };
+
+  if (loading) return <div className="flex justify-center p-12"><Loader2 className="animate-spin text-green-600" /></div>;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h3 className="text-xl font-bold flex items-center gap-2">
+          <Package className="text-green-600" size={24} />
+          Gerenciar Produtos
+        </h3>
+        <button 
+          onClick={() => setEditingProduct({ name: '', price: 0, category: 'Raquetes', description: '', image_url: '' })}
+          className="bg-green-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-green-700 transition-all text-sm"
+        >
+          <Plus size={18} /> Novo Produto
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {products.map(product => (
+          <div key={product.id} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex gap-4">
+            <div className="w-20 h-20 bg-gray-100 rounded-xl flex-shrink-0">
+              {product.image_url ? (
+                <img src={product.image_url} alt={product.name} className="w-full h-full object-contain rounded-xl" referrerPolicy="no-referrer" />
+              ) : (
+                <Package className="w-full h-full p-4 text-gray-300" />
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h4 className="font-bold text-gray-900 truncate">{product.name}</h4>
+              <p className="text-green-600 font-bold">R$ {product.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+              <p className="text-xs text-gray-500 truncate">{product.category}</p>
+              <div className="flex gap-2 mt-2">
+                <button 
+                  onClick={() => setEditingProduct(product)}
+                  className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                >
+                  <Edit2 size={16} />
+                </button>
+                <button 
+                  onClick={() => handleDelete(product.id)}
+                  className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <AnimatePresence>
+        {editingProduct && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="bg-white rounded-3xl w-full max-w-lg p-6 overflow-y-auto max-h-[90vh] shadow-2xl"
+            >
+              <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
+                {editingProduct.id ? 'Editar Produto' : 'Novo Produto'}
+              </h3>
+              <form onSubmit={handleSave} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-500 uppercase">Nome</label>
+                    <input 
+                      type="text" 
+                      required
+                      value={editingProduct.name}
+                      onChange={e => setEditingProduct({...editingProduct, name: e.target.value})}
+                      className="w-full p-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-green-500 outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-500 uppercase">Preço (R$)</label>
+                    <input 
+                      type="number" 
+                      required
+                      step="0.01"
+                      value={editingProduct.price}
+                      onChange={e => setEditingProduct({...editingProduct, price: parseFloat(e.target.value)})}
+                      className="w-full p-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-green-500 outline-none"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-gray-500 uppercase">Categoria</label>
+                  <select 
+                    value={editingProduct.category}
+                    onChange={e => setEditingProduct({...editingProduct, category: e.target.value})}
+                    className="w-full p-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-green-500 outline-none"
+                  >
+                    <option>RAQUETES DE BEACH TENNIS</option>
+                    <option>MOCHILAS E RAQUETEIRAS</option>
+                    <option>VESTUÁRIO</option>
+                    <option>ACESSÓRIOS</option>
+                    <option>PICKLEBALL</option>
+                    <option>OUTROS</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-gray-500 uppercase">URL da Imagem</label>
+                  <input 
+                    type="url" 
+                    value={editingProduct.image_url}
+                    onChange={e => setEditingProduct({...editingProduct, image_url: e.target.value})}
+                    className="w-full p-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-green-500 outline-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-gray-500 uppercase">Descrição</label>
+                  <textarea 
+                    rows={3}
+                    value={editingProduct.description}
+                    onChange={e => setEditingProduct({...editingProduct, description: e.target.value})}
+                    className="w-full p-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-green-500 outline-none resize-none"
+                  />
+                </div>
+                <div className="flex items-center gap-2 pt-2">
+                  <input 
+                    type="checkbox"
+                    checked={editingProduct.highlighted}
+                    onChange={e => setEditingProduct({...editingProduct, highlighted: e.target.checked})}
+                    id="highlighted"
+                    className="rounded text-green-600 focus:ring-green-500"
+                  />
+                  <label htmlFor="highlighted" className="text-sm font-bold text-gray-700">Destaque na vitrine</label>
+                </div>
+                <div className="flex gap-3 pt-4">
+                  <button 
+                    type="button"
+                    onClick={() => setEditingProduct(null)}
+                    className="flex-1 py-4 rounded-2xl font-bold text-gray-500 bg-gray-100 hover:bg-gray-200 transition-all"
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    type="submit"
+                    className="flex-1 py-4 rounded-2xl font-bold text-white bg-green-600 hover:bg-green-700 transition-all shadow-lg shadow-green-100"
+                  >
+                    Salvar
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function Shop({ setToast }: { setToast: (t: any) => void }) {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [category, setCategory] = useState('TODOS');
+  const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
+  const [params] = useState(() => new URLSearchParams(window.location.search));
+  const teacherId = params.get('loc');
+
+  const categories = [
+    'TODOS',
+    'RAQUETES DE BEACH TENNIS',
+    'MOCHILAS E RAQUETEIRAS',
+    'VESTUÁRIO',
+    'ACESSÓRIOS',
+    'PICKLEBALL'
+  ];
+
+  useEffect(() => {
+    let q;
+    if (teacherId) {
+      q = query(collection(db, 'products'), where('teacher_id', '==', teacherId));
+      
+      // Fetch settings for whatsapp number
+      getDoc(doc(db, 'settings', teacherId)).then(snap => {
+        if (snap.exists()) setAppSettings(snap.data() as AppSettings);
+      });
+    } else {
+      q = query(collection(db, 'products'), limit(50));
+    }
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
+      setProducts(docs);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, [teacherId]);
+
+  const filteredProducts = products.filter(p => {
+    const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase()) || 
+                         p.description.toLowerCase().includes(search.toLowerCase());
+    const matchesCategory = category === 'TODOS' || p.category === category;
+    return matchesSearch && matchesCategory;
+  });
+
+  const handleBuy = (product: Product) => {
+    const whatsapp = product.whatsapp_number || appSettings?.whatsapp_number;
+    if (!whatsapp) {
+      setToast({ message: 'Número de WhatsApp do instrutor não configurado.', type: 'error' });
+      return;
+    }
+
+    const text = encodeURIComponent(`Olá! Gostaria de comprar o produto: *${product.name}* (R$ ${product.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`);
+    window.open(`https://wa.me/55${whatsapp.replace(/\D/g, '')}?text=${text}`, '_blank');
+  };
+
+  if (loading) return <div className="flex justify-center p-24"><Loader2 className="animate-spin text-green-600 w-12 h-12" /></div>;
+
+  if (products.length === 0 && !loading) {
+    return (
+      <div className="text-center py-24 space-y-4">
+        <ShoppingBasket size={64} className="mx-auto text-gray-200" />
+        <h2 className="text-2xl font-bold text-gray-400">Nenhum produto cadastrado nesta loja</h2>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-8 pb-12">
+      {/* Search Header */}
+      <div className="relative">
+        <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+          <Search className="text-gray-400" size={20} />
+        </div>
+        <input 
+          type="text"
+          placeholder="O que você está buscando?"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="w-full pl-12 pr-4 py-4 bg-white rounded-2xl border-none shadow-sm focus:ring-2 focus:ring-green-500 outline-none transition-all"
+        />
+      </div>
+
+      {/* Categories Bar */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="flex overflow-x-auto scrollbar-hide">
+          {categories.map(cat => (
+            <button
+              key={cat}
+              onClick={() => setCategory(cat)}
+              className={`px-6 py-4 text-xs font-bold whitespace-nowrap transition-all border-b-2 uppercase tracking-wider ${
+                category === cat 
+                  ? 'border-green-600 text-green-600 bg-green-50/50' 
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Products Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        {filteredProducts.map(product => (
+          <motion.div 
+            layout
+            key={product.id}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white rounded-3xl border border-gray-100 overflow-hidden shadow-sm hover:shadow-xl transition-all group flex flex-col h-full"
+          >
+            <div className="aspect-square bg-gray-50 relative overflow-hidden flex items-center justify-center p-6">
+              {product.highlighted && (
+                <div className="absolute top-4 left-4 bg-red-500 text-white text-[10px] font-black px-2 py-1 rounded flex items-center gap-1 z-10 uppercase">
+                  <Star size={10} fill="currentColor" /> Destaque
+                </div>
+              )}
+              {product.image_url ? (
+                <img 
+                  src={product.image_url} 
+                  alt={product.name} 
+                  className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-500" 
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <Package size={64} className="text-gray-200" />
+              )}
+            </div>
+            <div className="p-6 flex flex-col flex-1 space-y-2">
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{product.category}</span>
+              <h4 className="font-bold text-gray-900 line-clamp-2 min-h-[3rem] leading-tight group-hover:text-green-600 transition-colors uppercase">
+                {product.name}
+              </h4>
+              <div className="pt-2 mt-auto">
+                <div className="text-2xl font-black text-gray-900">
+                  R$ {product.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </div>
+                <div className="text-xs text-green-600 font-bold mb-4">
+                  R$ {(product.price * 0.9).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} com Pix
+                </div>
+                <button 
+                  onClick={() => handleBuy(product)}
+                  className="w-full py-3 bg-purple-600 text-white font-black rounded-xl hover:bg-purple-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-purple-100 group-active:scale-95 text-xs uppercase"
+                >
+                  <ShoppingBag size={14} /> Comprar
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        ))}
+      </div>
+
+      {filteredProducts.length === 0 && (
+        <div className="text-center py-12 text-gray-400 italic">
+          Nenhum produto encontrado na busca ou categoria selecionada.
+        </div>
+      )}
     </div>
   );
 }

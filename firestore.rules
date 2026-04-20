@@ -107,6 +107,14 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isAuthenticated() && settingId == request.auth.uid && isTeacher(request.resource.data) && isValidAppSettings(request.resource.data);
     }
+
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if isAuthenticated() && (
+        (request.resource != null && request.resource.data.teacher_id == request.auth.uid) ||
+        (resource != null && resource.data.teacher_id == request.auth.uid)
+      );
+    }
     
     match /test/connection {
       allow read: if true;
