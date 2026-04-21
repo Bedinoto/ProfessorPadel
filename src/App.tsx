@@ -66,7 +66,11 @@ import {
   where, 
   orderBy, 
   onSnapshot,
-  limit
+  limit,
+  storage,
+  ref,
+  uploadString,
+  getDownloadURL
 } from './firebase';
 
 // --- ERROR HANDLING ---
@@ -2960,23 +2964,21 @@ function ProductManager({ user, setToast }: { user: any, setToast: (t: any) => v
     const reader = new FileReader();
     reader.onload = async () => {
       try {
-        const response = await fetch('/api/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            image: reader.result,
-            name: file.name
-          })
-        });
-        const data = await response.json();
-        if (data.url) {
-          setEditingProduct(prev => ({ ...prev, image_url: data.url }));
-          setToast({ message: 'Imagem carregada!', type: 'success' });
-        } else {
-          throw new Error(data.error || 'Erro no upload');
-        }
-      } catch (error) {
-        setToast({ message: 'Falha no upload da imagem', type: 'error' });
+        const imageBase64 = reader.result as string;
+        const fileName = `${Date.now()}-${file.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}`;
+        const storageRef = ref(storage, `products/${user.uid}/${fileName}`);
+        
+        // Upload to Firebase Storage
+        await uploadString(storageRef, imageBase64, 'data_url');
+        
+        // Get Download URL
+        const downloadUrl = await getDownloadURL(storageRef);
+        
+        setEditingProduct(prev => ({ ...prev, image_url: downloadUrl }));
+        setToast({ message: 'Imagem carregada!', type: 'success' });
+      } catch (error: any) {
+        console.error('Upload error:', error);
+        setToast({ message: 'Falha no upload (Verifique se o Firebase Storage está ativo)', type: 'error' });
       } finally {
         setUploading(false);
       }

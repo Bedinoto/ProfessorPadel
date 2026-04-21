@@ -46,46 +46,6 @@ async function startServer() {
     res.status(200).send("pong");
   });
 
-  app.get("/api/debug-info", (req, res) => {
-    const info = {
-      cwd: process.cwd(),
-      env: process.env,
-      files: fs.readdirSync(process.cwd())
-    };
-    res.json(info);
-  });
-
-  // --- IMAGE UPLOAD ---
-  app.post("/api/upload", (req, res) => {
-    debugLog("--- IMAGE UPLOAD ROUTE HIT ---");
-    const { image, name } = req.body;
-    if (!image || !name) {
-      return res.status(400).json({ error: "Image data and name are required." });
-    }
-
-    try {
-      const publicDir = path.resolve(process.cwd(), "public");
-      const uploadsDir = path.join(publicDir, "uploads");
-      
-      if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir);
-      if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
-
-      const base64Data = image.replace(/^data:image\/\w+;base64,/, "");
-      const extension = image.split(';')[0].split('/')[1] || 'png';
-      const fileName = `${Date.now()}-${name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.${extension}`;
-      const filePath = path.join(uploadsDir, fileName);
-
-      fs.writeFileSync(filePath, base64Data, 'base64');
-      debugLog(`Image saved: ${filePath}`);
-
-      const imageUrl = `/uploads/${fileName}`;
-      res.json({ url: imageUrl });
-    } catch (error: any) {
-      debugLog(`UPLOAD ERROR: ${error.message}`);
-      res.status(500).json({ error: error.message });
-    }
-  });
-
   // --- GOOGLE CALENDAR PROXY ---
   app.get("/api/sync-calendar", async (req, res) => {
     debugLog("--- CALENDAR PROXY ROUTE HIT ---");
@@ -164,8 +124,6 @@ async function startServer() {
   });
 
   // --- VITE MIDDLEWARE OR STATIC SERVING ---
-  app.use("/uploads", express.static(path.resolve(process.cwd(), "public/uploads")));
-
   if (process.env.NODE_ENV !== "production") {
     debugLog("Starting Vite in middleware mode...");
     const vite = await createViteServer({
