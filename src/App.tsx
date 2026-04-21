@@ -572,7 +572,7 @@ function PublicBooking({
     
     const eventUserType = lastBooking.user_type || 'professor';
     const eventTitle = eventUserType === 'court_owner' ? 'Reserva de Quadra' : 'Aula de Padel/Beach Tennis';
-    const title = encodeURIComponent(`${eventTitle} - ${lastBooking.teacher_name}`);
+    const title = encodeURIComponent(`${eventTitle} (${lastBooking.booking_type}) - ${lastBooking.teacher_name}`);
     const dates = `${formatDate(startDate)}/${formatDate(endDate)}`;
     const userLabel = eventUserType === 'court_owner' ? 'Cliente' : 'Aluno';
     const contextLabel = eventUserType === 'court_owner' ? 'Locação' : 'Aulas';
@@ -1200,8 +1200,9 @@ function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherNam
       }
 
       const googleUrl = new URL(scriptUrl);
+      const eventLabel = (appSettings?.user_type === 'court_owner') ? 'Reserva' : 'Aula';
       const params = {
-        titulo: `Aula: ${booking.student_name}`,
+        titulo: `${eventLabel} (${booking.booking_type}): ${booking.student_name}`,
         inicio: `${booking.date} ${booking.time}`,
         fim: `${booking.date} ${booking.time}`,
         descricao: `Tipo: ${booking.booking_type}\nTelefone: ${booking.student_phone}`,
