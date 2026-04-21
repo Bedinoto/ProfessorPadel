@@ -175,8 +175,7 @@ export default function App() {
       <nav className="bg-white border-b border-gray-200 px-4 py-3 sticky top-0 z-50">
         <div className="max-w-5xl mx-auto flex justify-between items-center">
           <div 
-            className="flex items-center gap-2 sm:gap-3 cursor-pointer overflow-hidden h-10 md:h-16 lg:h-20 transition-all" 
-            onClick={() => setView('public')}
+            className="flex items-center gap-2 sm:gap-3 overflow-hidden h-10 md:h-16 lg:h-20 transition-all" 
           >
             <img src={logo} alt="Logo" className="h-full w-auto object-contain" />
             
@@ -191,12 +190,6 @@ export default function App() {
           </div>
 
           <div className="hidden md:flex items-center gap-6 ml-8">
-            <button 
-              onClick={() => setView('public')}
-              className={`text-sm font-semibold transition-colors ${view === 'public' ? 'text-green-600' : 'text-gray-500 hover:text-green-500'}`}
-            >
-              Agenda
-            </button>
             <button 
               onClick={() => setView('shop')}
               className={`text-sm font-semibold transition-colors ${view === 'shop' ? 'text-green-600' : 'text-gray-500 hover:text-green-500'}`}
@@ -2672,8 +2665,7 @@ function SettingsManager({ user, setToast }: { user: any, setToast: (t: any) => 
             <textarea 
               rows={5}
               placeholder={`Ex:\nOlá! Esta é a agenda de {local}.\nPara agendar com {nome} acesse:\n{link}\n\nHorários:\n{horarios}`}
-              className="w-full px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none text-sm font-sans resize-none transition-opacity"
-              style={{ opacity: whatsappEnabled ? 1 : 0.5 }}
+              className="w-full px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none text-sm font-sans resize-none"
               value={whatsappTemplate}
               onChange={e => setWhatsappTemplate(e.target.value)}
             />
@@ -3297,24 +3289,48 @@ function Shop({ setToast }: { setToast: (t: any) => void }) {
 
   useEffect(() => {
     let q;
-    if (teacherId) {
-      q = query(collection(db, 'products'), where('teacher_id', '==', teacherId));
+    let effectiveTeacherId = teacherId;
+
+    // Se não houver loc na URL, mas o usuário estiver logado, usamos o ID dele
+    if (!effectiveTeacherId && auth.currentUser) {
+      effectiveTeacherId = auth.currentUser.uid;
+    }
+
+    let unsubscribeSettings: () => void;
+
+    if (effectiveTeacherId) {
+      q = query(collection(db, 'products'), where('teacher_id', '==', effectiveTeacherId));
       
-      // Fetch settings for whatsapp number
-      getDoc(doc(db, 'settings', teacherId)).then(snap => {
-        if (snap.exists()) setAppSettings(snap.data() as AppSettings);
+      // Fetch settings for whatsapp number with real-time updates
+      unsubscribeSettings = onSnapshot(doc(db, 'settings', effectiveTeacherId), (snap) => {
+        if (snap.exists()) {
+          setAppSettings(snap.data() as AppSettings);
+        }
       });
     } else {
       q = query(collection(db, 'products'), limit(50));
     }
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribeProducts = onSnapshot(q, (snapshot) => {
       const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
       setProducts(docs);
+      
+      // Se não temos appSettings (global shop) e temos produtos, 
+      // tentamos carregar os settings do primeiro produto para ter um whatsapp base
+      if (!effectiveTeacherId && docs.length > 0 && !appSettings) {
+        getDoc(doc(db, 'settings', docs[0].teacher_id)).then(snap => {
+          if (snap.exists()) setAppSettings(snap.data() as AppSettings);
+        });
+      }
+      
       setLoading(false);
     });
-    return () => unsubscribe();
-  }, [teacherId]);
+
+    return () => {
+      if (unsubscribeProducts) unsubscribeProducts();
+      if (unsubscribeSettings) unsubscribeSettings();
+    };
+  }, [teacherId, auth.currentUser?.uid]);
 
   const filteredProducts = products.filter(p => {
     const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase()) || 
@@ -3332,7 +3348,12 @@ function Shop({ setToast }: { setToast: (t: any) => void }) {
 
     const instructorInfo = appSettings?.teacher_name ? ` do instrutor *${appSettings.teacher_name}*` : "";
     const text = encodeURIComponent(`Olá! Gostaria de comprar o produto${instructorInfo}: *${product.name}* (R$ ${product.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`);
-    window.open(`https://wa.me/55${whatsapp.replace(/\D/g, '')}?text=${text}`, '_blank');
+    
+    // Garantir que não duplique o 55 se o usuário já inseriu no cadastro
+    const cleanNumber = whatsapp.replace(/\D/g, '');
+    const finalNumber = cleanNumber.startsWith('55') ? cleanNumber : `55${cleanNumber}`;
+    
+    window.open(`https://wa.me/${finalNumber}?text=${text}`, '_blank');
   };
 
   if (loading) return <div className="flex justify-center p-24"><Loader2 className="animate-spin text-green-600 w-12 h-12" /></div>;
