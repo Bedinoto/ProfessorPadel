@@ -2253,9 +2253,28 @@ function EditBookingModal({
 
       if (selectedSlotId !== booking.slot_id) {
         const newSlot = availableSlots.find(s => s.id === selectedSlotId);
-        const loc = locations.find(l => l.id === newSlot?.location_id);
         
         if (newSlot) {
+          const isTeacher = appSettings?.user_type !== 'court_owner';
+          
+          if (isTeacher) {
+            const conflictQ = query(
+              collection(db, 'bookings'),
+              where('teacher_id', '==', booking.teacher_id),
+              where('date', '==', newSlot.date),
+              where('time', '==', newSlot.time)
+            );
+            const conflictSnap = await getDocs(conflictQ);
+            // Ignore current booking if it happens to be at the same time (swapping location only)
+            const hasConflict = conflictSnap.docs.some(doc => doc.id !== booking.id);
+            
+            if (hasConflict) {
+              throw new Error("Você já possui um agendamento neste dia e horário em outro local.");
+            }
+          }
+
+          const loc = locations.find(l => l.id === newSlot?.location_id);
+          
           // Free old slot
           await updateDoc(doc(db, 'slots', booking.slot_id), { is_available: true });
           // Reserve new slot
@@ -2265,6 +2284,7 @@ function EditBookingModal({
           updates.date = newSlot.date;
           updates.time = newSlot.time;
           updates.location_name = loc?.name || '';
+          updates.location_id = newSlot.location_id;
         }
       }
 
