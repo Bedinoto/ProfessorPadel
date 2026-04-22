@@ -16,6 +16,7 @@ import {
   LayoutDashboard, 
   LogOut, 
   Plus, 
+  PlusCircle,
   Trash2, 
   DollarSign,
   ChevronLeft,
@@ -1107,6 +1108,253 @@ function ConfirmModal({
   );
 }
 
+function ManualBookingModal({ 
+  user, 
+  locations, 
+  appSettings, 
+  onClose, 
+  setToast 
+}: { 
+  user: any, 
+  locations: Location[], 
+  appSettings: AppSettings | null, 
+  onClose: () => void, 
+  setToast: (t: any) => void 
+}) {
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    student_name: '',
+    student_phone: '',
+    booking_type: appSettings?.booking_types?.[0]?.name || 'Individual',
+    location_id: locations[0]?.id || '',
+    date: format(new Date(), 'yyyy-MM-dd'),
+    time: '08:00'
+  });
+
+  const timeSlots = [
+    '07:00', '08:00', '09:00', '10:00', '11:00', '12:00',
+    '13:00', '14:00', '15:00', '16:00', '17:00', '18:00',
+    '19:00', '20:00', '21:00', '22:00'
+  ];
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.location_id) {
+      setToast({ message: "Selecione um local", type: 'error' });
+      return;
+    }
+    if (!formData.student_name.trim()) {
+      setToast({ message: "Nome do aluno/cliente obrigatório", type: 'error' });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const isTeacher = appSettings?.user_type !== 'court_owner';
+      
+      // 1. Check for Conflicts
+      // For Teachers: Can't have 2 bookings at the same time in ANY location
+      if (isTeacher) {
+        const teacherConflictQ = query(
+          collection(db, 'bookings'),
+          where('teacher_id', '==', user.uid),
+          where('date', '==', formData.date),
+          where('time', '==', formData.time)
+        );
+        const conflictSnap = await getDocs(teacherConflictQ);
+        if (!conflictSnap.empty) {
+          throw new Error("Você já tem um agendamento neste horário em outro local.");
+        }
+      }
+
+      // 2. Check Local Conflict (using slots which is public read)
+      const slotId = `${formData.location_id}_${formData.date}_${formData.time.replace(':', '')}`;
+      const slotRef = doc(db, 'slots', slotId);
+      const slotSnap = await getDoc(slotRef);
+      
+      if (slotSnap.exists() && slotSnap.data().is_available === false) {
+        throw new Error("Este local já possui um agendamento neste horário.");
+      }
+
+      const selectedLocation = locations.find(l => l.id === formData.location_id);
+      const activeBookingTypes = appSettings?.booking_types || DEFAULT_BOOKING_TYPES;
+      const selectedType = activeBookingTypes.find(t => t.name === formData.booking_type);
+
+      // 3. Create Booking
+      const bookingId = Date.now().toString();
+      
+      const bookingData = {
+        id: bookingId,
+        slot_id: slotId,
+        teacher_id: user.uid,
+        student_name: formData.student_name,
+        student_phone: formData.student_phone,
+        booking_type: formData.booking_type,
+        price: selectedType?.price || 0,
+        paid: false,
+        date: formData.date,
+        time: formData.time,
+        location_name: selectedLocation?.name || '',
+        location_id: formData.location_id,
+        user_type: appSettings?.user_type || 'professor'
+      };
+
+      await setDoc(doc(db, 'bookings', bookingId), bookingData);
+
+      // 3. Update/Create Slot to mark as occupied
+      await setDoc(doc(db, 'slots', slotId), {
+        location_id: formData.location_id,
+        teacher_id: user.uid,
+        date: formData.date,
+        time: formData.time,
+        is_available: false
+      });
+
+      setToast({ message: "Agendamento realizado com sucesso!", type: 'success' });
+      onClose();
+    } catch (err: any) {
+      console.error(err);
+      setToast({ message: err.message || "Erro ao realizar agendamento manual", type: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.9 }}
+        className="bg-white rounded-3xl w-full max-w-lg p-6 overflow-y-auto max-h-[90vh] shadow-2xl"
+      >
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-xl font-bold flex items-center gap-2">
+            <PlusCircle className="text-green-600" size={24} />
+            Agendamento Manual
+          </h3>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+            <XCircle size={20} className="text-gray-400" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-gray-400 uppercase">Nome do {appSettings?.user_type === 'court_owner' ? 'Cliente' : 'Aluno'}</label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300" size={16} />
+                <input 
+                  type="text" 
+                  required
+                  placeholder="Nome completo"
+                  value={formData.student_name}
+                  onChange={e => setFormData({ ...formData, student_name: e.target.value })}
+                  className="w-full pl-10 p-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-green-500 outline-none"
+                />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-gray-400 uppercase">Telefone (Opcional)</label>
+              <div className="relative">
+                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300" size={16} />
+                <input 
+                  type="tel" 
+                  placeholder="(00) 00000-0000"
+                  value={formData.student_phone}
+                  onChange={e => setFormData({ ...formData, student_phone: e.target.value })}
+                  className="w-full pl-10 p-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-green-500 outline-none"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-gray-400 uppercase">Data</label>
+              <div className="relative">
+                <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300" size={16} />
+                <input 
+                  type="date" 
+                  required
+                  value={formData.date}
+                  onChange={e => setFormData({ ...formData, date: e.target.value })}
+                  className="w-full pl-10 p-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-green-500 outline-none"
+                />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-gray-400 uppercase">Horário</label>
+              <div className="relative">
+                <Clock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300" size={16} />
+                <select 
+                  value={formData.time}
+                  onChange={e => setFormData({ ...formData, time: e.target.value })}
+                  className="w-full pl-10 p-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-green-500 outline-none appearance-none"
+                >
+                  {timeSlots.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-gray-400 uppercase">Local / Quadra</label>
+            <div className="relative">
+              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300" size={16} />
+              <select 
+                value={formData.location_id}
+                onChange={e => setFormData({ ...formData, location_id: e.target.value })}
+                className="w-full pl-10 p-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-green-500 outline-none appearance-none"
+              >
+                <option value="">Selecione um local</option>
+                {locations.map(loc => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-gray-400 uppercase">Categoria / Modalidade</label>
+            <div className="grid grid-cols-2 gap-2">
+              {(appSettings?.booking_types || DEFAULT_BOOKING_TYPES).map(type => (
+                <button
+                  key={type.name}
+                  type="button"
+                  onClick={() => setFormData({ ...formData, booking_type: type.name })}
+                  className={`p-3 rounded-xl border text-sm font-bold transition-all ${
+                    formData.booking_type === type.name 
+                    ? 'border-green-600 bg-green-50 text-green-600' 
+                    : 'border-gray-100 bg-gray-50 text-gray-400 hover:bg-gray-100'
+                  }`}
+                >
+                  {type.name}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex gap-3 pt-6">
+            <button 
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-4 rounded-2xl font-bold text-gray-500 bg-gray-100 hover:bg-gray-200 transition-all"
+            >
+              Cancelar
+            </button>
+            <button 
+              type="submit"
+              disabled={loading}
+              className="flex-1 py-4 rounded-2xl font-bold text-white bg-green-600 hover:bg-green-700 transition-all shadow-lg shadow-green-100 disabled:opacity-50"
+            >
+              {loading ? 'Salvando...' : 'Agendar Agora'}
+            </button>
+          </div>
+        </form>
+      </motion.div>
+    </div>
+  );
+}
+
 function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherName: string, setToast: (t: any) => void }) {
   const [tab, setTab] = useState<'schedule' | 'bookings' | 'finance' | 'locations' | 'settings' | 'products' | 'superadmin'>('schedule');
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -1118,6 +1366,8 @@ function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherNam
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'paid' | 'pending'>('all');
+  const [showManualBooking, setShowManualBooking] = useState(false);
+  const [locations, setLocations] = useState<Location[]>([]);
   const [confirmConfig, setConfirmConfig] = useState<{
     isOpen: boolean,
     title: string,
@@ -1141,7 +1391,17 @@ function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherNam
         setAppSettings({ id: snapshot.id, ...snapshot.data() } as AppSettings);
       }
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'settings'));
-    return () => unsubscribe();
+
+    // Fetch locations
+    const qLocs = query(collection(db, 'locations'), where('teacher_id', '==', user.uid));
+    const unsubLocs = onSnapshot(qLocs, (snapshot) => {
+      setLocations(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Location)));
+    });
+
+    return () => {
+      unsubscribe();
+      unsubLocs();
+    };
   }, [user.uid]);
 
   useEffect(() => {
@@ -1410,6 +1670,13 @@ function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherNam
                   <Users size={20} className="text-green-600" />
                   Controle de {appSettings?.user_type === 'court_owner' ? 'Clientes' : 'Alunos'}
                 </h3>
+                <button
+                  onClick={() => setShowManualBooking(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-xl font-bold text-sm hover:bg-green-700 transition-all shadow-sm active:scale-95"
+                >
+                  <PlusCircle size={18} />
+                  NOVO AGENDAMENTO
+                </button>
               </div>
               
               <div className="grid grid-cols-2 lg:flex lg:flex-wrap items-end gap-3">
@@ -1776,6 +2043,18 @@ function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherNam
         type={confirmConfig.type}
         confirmText={confirmConfig.confirmText}
       />
+
+      <AnimatePresence>
+        {showManualBooking && (
+          <ManualBookingModal 
+            user={user}
+            locations={locations}
+            appSettings={appSettings}
+            onClose={() => setShowManualBooking(false)}
+            setToast={setToast}
+          />
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {editingBooking && (
@@ -3262,11 +3541,6 @@ function ProductManager({ user, setToast }: { user: any, setToast: (t: any) => v
           </div>
         )}
       </AnimatePresence>
-
-      <ConfirmModal 
-        {...confirmConfig} 
-        onClose={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))} 
-      />
     </div>
   );
 }

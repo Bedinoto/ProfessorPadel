@@ -25,6 +25,7 @@ export interface Booking {
   date: string;
   time: string;
   location_name: string;
+  location_id?: string;
   google_event_id?: string;
   google_synced?: boolean;
   user_type?: 'professor' | 'court_owner';
