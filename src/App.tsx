@@ -46,6 +46,8 @@ import {
 } from 'lucide-react';
 import { format, addDays, startOfToday, isSameDay, parseISO, startOfWeek, endOfWeek } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { Slot, Booking, FinanceSummary, Location, AppSettings, BookingType, Product } from './types';
 import { 
   auth, 
@@ -1366,6 +1368,7 @@ function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherNam
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'paid' | 'pending'>('all');
+  const [locationFilter, setLocationFilter] = useState<string>('all');
   const [showManualBooking, setShowManualBooking] = useState(false);
   const [locations, setLocations] = useState<Location[]>([]);
   const [confirmConfig, setConfirmConfig] = useState<{
@@ -1553,6 +1556,82 @@ function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherNam
     }
   };
 
+  const handleGenerateReport = () => {
+    const filtered = bookings.filter(b => {
+      const matchesStart = startDate ? b.date >= startDate : true;
+      const matchesEnd = endDate ? b.date <= endDate : true;
+      const matchesStatus = statusFilter === 'all' 
+        ? true 
+        : statusFilter === 'paid' ? b.paid : !b.paid;
+      const matchesLocation = locationFilter === 'all' 
+        ? true 
+        : (b.location_id === locationFilter || b.location_name === locationFilter);
+      return matchesStart && matchesEnd && matchesStatus && matchesLocation;
+    });
+
+    if (filtered.length === 0) {
+      setToast({ message: 'Nenhum dado encontrado para gerar relatório', type: 'error' });
+      return;
+    }
+
+    // Sort by date and time
+    filtered.sort((a, b) => {
+      if (a.date !== b.date) return a.date.localeCompare(b.date);
+      return a.time.localeCompare(b.time);
+    });
+
+    try {
+      const doc = new jsPDF();
+      
+      // Header
+      doc.setFontSize(18);
+      doc.setTextColor(22, 163, 74); // green-600
+      doc.text('Relatório de Agendamentos', 14, 22);
+      
+      doc.setFontSize(10);
+      doc.setTextColor(100, 100, 100);
+      const filterText = [
+        `Período: ${startDate ? format(parseISO(startDate), 'dd/MM/yy') : 'Início'} até ${endDate ? format(parseISO(endDate), 'dd/MM/yy') : 'Fim'}`,
+        `Local: ${locationFilter === 'all' ? 'Todos' : locations.find(l => l.id === locationFilter)?.name || 'Selecionado'}`,
+        `Status: ${statusFilter === 'all' ? 'Todos' : statusFilter === 'paid' ? 'Pagos' : 'Pendentes'}`
+      ].join(' | ');
+      doc.text(filterText, 14, 30);
+      
+      doc.setFontSize(8);
+      doc.text(`Gerado em: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, 14, 35);
+
+      const tableRows = filtered.map(b => [
+        format(parseISO(b.date), 'dd/MM/yy'),
+        b.time,
+        b.location_name,
+        b.student_name,
+        b.student_phone,
+        b.booking_type,
+        `R$ ${b.price.toFixed(2)}`,
+        b.paid ? 'Pago' : 'Pendente'
+      ]);
+
+      autoTable(doc, {
+        head: [['Data', 'Hora', 'Local', 'Cliente/Aluno', 'Telefone', 'Categoria', 'Preço', 'Status']],
+        body: tableRows,
+        startY: 40,
+        theme: 'striped',
+        headStyles: { fillColor: [22, 163, 74] }, // green-600
+        styles: { fontSize: 8, cellPadding: 2 },
+        columnStyles: {
+          6: { halign: 'right' },
+          7: { fontStyle: 'bold' }
+        }
+      });
+
+      doc.save(`relatorio_${format(new Date(), 'dd_MM_yyyy')}.pdf`);
+      setToast({ message: 'Relatório PDF gerado com sucesso!', type: 'success' });
+    } catch (error) {
+      console.error('Erro ao gerar PDF:', error);
+      setToast({ message: 'Erro ao gerar PDF do relatório', type: 'error' });
+    }
+  };
+
   if (appSettings?.is_active === false && user.email !== 'uillian.bedinoto@gmail.com') {
     return (
       <div className="flex flex-col items-center justify-center py-24 px-4 text-center space-y-8 bg-white rounded-3xl border border-red-100 shadow-sm">
@@ -1713,15 +1792,36 @@ function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherNam
                   </select>
                 </div>
 
-                <div className="flex items-center justify-center col-span-1 lg:col-span-1 h-[37px]">
-                  {(startDate || endDate || statusFilter !== 'all') && (
+                <div className="space-y-1 col-span-1 lg:col-span-1">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase">Local</span>
+                  <select 
+                    className="w-full text-xs p-2.5 bg-gray-50 border-none rounded-xl outline-none focus:ring-1 focus:ring-green-500"
+                    value={locationFilter}
+                    onChange={(e) => setLocationFilter(e.target.value)}
+                  >
+                    <option value="all">Todos os Locais</option>
+                    {locations.map(loc => (
+                      <option key={loc.id} value={loc.id}>{loc.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2 col-span-2 lg:col-span-auto h-[37px]">
+                  {(startDate || endDate || statusFilter !== 'all' || locationFilter !== 'all') && (
                     <button 
-                      onClick={() => { setStartDate(''); setEndDate(''); setStatusFilter('all'); }} 
+                      onClick={() => { setStartDate(''); setEndDate(''); setStatusFilter('all'); setLocationFilter('all'); }} 
                       className="text-[10px] text-red-500 font-bold hover:bg-red-50 px-3 py-2 rounded-lg transition-colors"
                     >
                       Limpar
                     </button>
                   )}
+                  <button 
+                    onClick={handleGenerateReport}
+                    className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-xl font-bold text-[10px] hover:bg-black transition-all shadow-sm active:scale-95 uppercase tracking-wider"
+                  >
+                    <FileText size={14} />
+                    Gerar Relatório
+                  </button>
                 </div>
               </div>
             </div>
@@ -1736,7 +1836,10 @@ function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherNam
                     const matchesStatus = statusFilter === 'all' 
                       ? true 
                       : statusFilter === 'paid' ? booking.paid : !booking.paid;
-                    return matchesStart && matchesEnd && matchesStatus;
+                    const matchesLocation = locationFilter === 'all' 
+                      ? true 
+                      : (booking.location_id === locationFilter || booking.location_name === locationFilter);
+                    return matchesStart && matchesEnd && matchesStatus && matchesLocation;
                   })
                   .map(booking => (
                     <div key={booking.id} className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm space-y-4">
@@ -1842,7 +1945,8 @@ function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherNam
                   const sm = startDate ? b.date >= startDate : true;
                   const em = endDate ? b.date <= endDate : true;
                   const stm = statusFilter === 'all' ? true : statusFilter === 'paid' ? b.paid : !b.paid;
-                  return sm && em && stm;
+                  const lm = locationFilter === 'all' ? true : (b.location_id === locationFilter || b.location_name === locationFilter);
+                  return sm && em && stm && lm;
                 }).length === 0 && (
                   <div className="bg-white py-14 text-center text-gray-400 rounded-3xl border border-dashed border-gray-100">
                     Nenhum {appSettings?.user_type === 'court_owner' ? 'cliente' : 'aluno'} encontrado.
@@ -1872,7 +1976,10 @@ function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherNam
                         const matchesStatus = statusFilter === 'all' 
                           ? true 
                           : statusFilter === 'paid' ? booking.paid : !booking.paid;
-                        return matchesStart && matchesEnd && matchesStatus;
+                        const matchesLocation = locationFilter === 'all' 
+                          ? true 
+                          : (booking.location_id === locationFilter || booking.location_name === locationFilter);
+                        return matchesStart && matchesEnd && matchesStatus && matchesLocation;
                       })
                       .map(booking => (
                         <tr key={booking.id} className="hover:bg-gray-50 transition-colors">
