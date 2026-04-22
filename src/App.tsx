@@ -2178,6 +2178,7 @@ function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherNam
             onClose={() => setEditingBooking(null)} 
             onSync={handleCalendarSync}
             appSettings={appSettings}
+            setToast={setToast}
           />
         )}
       </AnimatePresence>
@@ -2189,12 +2190,14 @@ function EditBookingModal({
   booking, 
   onClose, 
   onSync,
-  appSettings 
+  appSettings,
+  setToast
 }: { 
   booking: Booking, 
   onClose: () => void, 
   onSync: (booking: Booking) => void,
-  appSettings: AppSettings | null 
+  appSettings: AppSettings | null,
+  setToast: (t: any) => void
 }) {
   const [locations, setLocations] = useState<Location[]>([]);
   const [availableSlots, setAvailableSlots] = useState<Slot[]>([]);
@@ -2296,8 +2299,12 @@ function EditBookingModal({
       }
 
       onClose();
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, 'bookings');
+    } catch (error: any) {
+      if (error instanceof Error && error.message.includes('Você já possui um agendamento')) {
+        setToast({ message: error.message, type: 'error' });
+      } else {
+        handleFirestoreError(error, OperationType.UPDATE, 'bookings');
+      }
     } finally {
       setLoading(false);
     }
