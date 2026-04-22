@@ -137,6 +137,10 @@ export default function App() {
       // Try to get teacher name from URL immediately
       const params = new URLSearchParams(window.location.search);
       const profFromUrl = params.get('prof');
+      const hasLoc = params.has('loc');
+      const hasProf = params.has('prof');
+      const hasTid = params.has('tid');
+
       if (profFromUrl) {
         setActiveTeacherName(profFromUrl);
       }
@@ -144,8 +148,10 @@ export default function App() {
       // Hidden access via /admin or if already authenticated
       if (window.location.pathname === '/loja') {
         setView('shop');
-      } else if (currentUser || window.location.pathname === '/admin') {
+      } else if ((currentUser || window.location.pathname === '/admin') && !hasLoc && !hasProf && !hasTid) {
         setView(currentUser ? 'admin' : 'login');
+      } else if (hasLoc || hasProf || hasTid) {
+        setView('public');
       }
     });
     return () => unsubscribe();
@@ -497,6 +503,7 @@ function PublicBooking({
       // Add booking
       const bookingId = Date.now().toString();
       const bookingData = {
+        id: bookingId,
         slot_id: selectedSlot.id,
         teacher_id: selectedLocation?.teacher_id,
         student_name: formData.name,
@@ -507,6 +514,7 @@ function PublicBooking({
         date: dateStr,
         time: selectedSlot.time,
         location_name: selectedLocation?.name || '',
+        location_id: selectedLocation?.id || '',
         user_type: appSettings?.user_type || 'professor'
       };
 
@@ -1714,7 +1722,7 @@ function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherNam
       <AnimatePresence mode="wait">
         {tab === 'schedule' && (
           <motion.div key="schedule" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <ScheduleManager user={user} teacherName={teacherName} setToast={setToast} appSettings={appSettings} />
+            <ScheduleManager user={user} teacherName={teacherName} setToast={setToast} appSettings={appSettings} setConfirmConfig={setConfirmConfig} />
           </motion.div>
         )}
         {tab === 'locations' && (
@@ -2412,12 +2420,14 @@ function ScheduleManager({
   user, 
   teacherName, 
   setToast,
-  appSettings 
+  appSettings,
+  setConfirmConfig
 }: { 
   user: any, 
   teacherName: string, 
   setToast: (t: any) => void,
-  appSettings: AppSettings | null 
+  appSettings: AppSettings | null,
+  setConfirmConfig: (config: any) => void
 }) {
   const [locations, setLocations] = useState<Location[]>([]);
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
@@ -2508,12 +2518,22 @@ function ScheduleManager({
     }
   };
 
-  const handleDeleteSlot = async (id: string) => {
-    try {
-      await deleteDoc(doc(db, 'slots', id));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, 'slots');
-    }
+  const handleDeleteSlot = async (id: string, time: string) => {
+    setConfirmConfig({
+      isOpen: true,
+      title: "Excluir Horário?",
+      message: `Deseja realmente remover o horário das ${time}? Esta ação não pode ser desfeita.`,
+      type: 'danger',
+      confirmText: 'Excluir',
+      onConfirm: async () => {
+        try {
+          await deleteDoc(doc(db, 'slots', id));
+          setToast({ message: "Horário removido com sucesso!", type: 'success' });
+        } catch (error) {
+          handleFirestoreError(error, OperationType.DELETE, 'slots');
+        }
+      }
+    });
   };
 
   const handleShareWeeklyAgenda = async () => {
@@ -2753,7 +2773,7 @@ function ScheduleManager({
                         {slot.is_available ? 'Livre' : 'Ocupado'}
                       </span>
                       {slot.is_available && (
-                        <button onClick={() => handleDeleteSlot(slot.id)} className="text-gray-300 hover:text-red-500 transition-colors">
+                        <button onClick={() => handleDeleteSlot(slot.id, slot.time)} className="text-gray-300 hover:text-red-500 transition-colors">
                           <Trash2 size={14} />
                         </button>
                       )}
