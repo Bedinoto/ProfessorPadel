@@ -831,9 +831,8 @@ function PublicBooking({
           </div>
           <div>
             <h4 className="font-bold text-blue-900">Editando Reserva Atual</h4>
-            <p className="text-sm text-blue-700 leading-relaxed">
-              Sua reserva atual está marcada para <span className="font-bold">{format(parseISO(existingBooking.date), 'dd/MM/yyyy')} às {existingBooking.time}</span>. 
-              Ao escolher um novo horário abaixo e confirmar, a vaga antiga será liberada automaticamente.
+            <p className="text-sm text-blue-700 leading-relaxed font-medium">
+              Escolha um novo horário abaixo ou mantenha o mesmo para alterar categoria e confirmar, a vaga antiga será liberada automaticamente.
             </p>
           </div>
         </div>
@@ -2228,26 +2227,11 @@ function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherNam
                             )}
                           </button>
                           <button 
-                            onClick={async () => {
-                              const editLink = `${window.location.origin}/?b=${booking.id}`;
-                              try {
-                                await navigator.clipboard.writeText(editLink);
-                                setToast({ message: 'Link para o aluno copiado!', type: 'success' });
-                              } catch (err) {
-                                setToast({ message: 'Erro ao copiar link.', type: 'error' });
-                              }
-                            }}
-                            className="p-2 text-gray-400 hover:text-blue-600 transition-colors"
-                            title="Copiar link para o aluno ver/editar reserva"
-                          >
-                            <ExternalLink size={18} />
-                          </button>
-                          <button 
                             onClick={() => {
                               setConfirmConfig({
                                 isOpen: true,
                                 title: booking.paid ? "Alterar para Pendente?" : "Confirmar Pagamento?",
-                                message: `Deseja marcar esta aula de R$ ${booking.price.toFixed(2)} como ${booking.paid ? 'pendente' : 'paga'}?`,
+                                message: `Deseja marcar esta aula de R$ ${booking.price.toFixed(2)} como ${booking.paid ? 'pentente' : 'paga'}?`,
                                 type: booking.paid ? 'danger' : 'success',
                                 confirmText: 'Sim, Alterar',
                                 onConfirm: async () => {
