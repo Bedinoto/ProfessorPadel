@@ -94,15 +94,16 @@ service cloud.firestore {
       allow read: if true; // Public read for booking
       allow create: if isTeacher(request.resource.data) && isValidSlot(request.resource.data);
       allow update: if (isTeacher(request.resource.data) && isValidSlot(request.resource.data)) || 
-                     (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_available']) && 
-                      request.resource.data.is_available == false); // Allow public to mark as unavailable when booking
+                     (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_available'])); // Allow public to toggle availability
       allow delete: if isAuthenticated() && resource.data.teacher_id == request.auth.uid;
     }
 
     match /bookings/{bookingId} {
-      allow read: if isAuthenticated() && resource.data.teacher_id == request.auth.uid;
+      allow get: if true; // Public can get a specific booking by ID for editing
+      allow list: if isAuthenticated() && resource.data.teacher_id == request.auth.uid;
       allow create: if isValidBooking(request.resource.data); // Public can create booking
-      allow update: if isAuthenticated() && resource.data.teacher_id == request.auth.uid;
+      allow update: if (isAuthenticated() && resource.data.teacher_id == request.auth.uid) || 
+                     (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['slot_id', 'booking_type', 'price', 'date', 'time', 'location_name', 'location_id'])); 
       allow delete: if isAuthenticated() && resource.data.teacher_id == request.auth.uid;
     }
 

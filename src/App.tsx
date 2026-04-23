@@ -2045,6 +2045,23 @@ function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherNam
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex gap-1.5">
                           <button 
+                            onClick={() => {
+                              const editLink = `${window.location.origin}/?b=${booking.id}`;
+                              const template = appSettings?.student_edit_template || "Olá {telefone}!\nSua reserva em {local} está confirmada para {agenda}.\nSe precisar alterar, acesse:\n{link}";
+                              const msg = template
+                                .replace('{telefone}', booking.student_name)
+                                .replace('{local}', booking.location_name)
+                                .replace('{agenda}', `${format(parseISO(booking.date), 'dd/MM')} às ${booking.time}`)
+                                .replace('{link}', editLink);
+                              
+                              window.open(`https://wa.me/${booking.student_phone.replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
+                            }}
+                            className="p-3 bg-green-50 text-green-600 rounded-xl hover:bg-green-100 transition-all border border-transparent"
+                            title="Enviar Link de Edição via WhatsApp"
+                          >
+                            <MessageCircle size={18} />
+                          </button>
+                          <button 
                             onClick={() => setEditingBooking(booking)}
                             className="p-3 bg-gray-50 text-gray-500 rounded-xl transition-all border border-transparent"
                           >
@@ -2172,8 +2189,25 @@ function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherNam
                           {booking.paid ? 'Pago' : 'Pendente'}
                         </span>
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="flex gap-2">
+                      <td className="px-6 py-4 text-center">
+                        <div className="flex gap-1 justify-center">
+                          <button 
+                            onClick={() => {
+                              const editLink = `${window.location.origin}/?b=${booking.id}`;
+                              const template = appSettings?.student_edit_template || "Olá {telefone}!\nSua reserva em {local} está confirmada para {agenda}.\nSe precisar alterar, acesse:\n{link}";
+                              const msg = template
+                                .replace('{telefone}', booking.student_name)
+                                .replace('{local}', booking.location_name)
+                                .replace('{agenda}', `${format(parseISO(booking.date), 'dd/MM')} às ${booking.time}`)
+                                .replace('{link}', editLink);
+                              
+                              window.open(`https://wa.me/${booking.student_phone.replace(/\D/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
+                            }}
+                            className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors border border-transparent"
+                            title="Enviar Link de Edição via WhatsApp"
+                          >
+                            <MessageCircle size={18} />
+                          </button>
                           <button 
                             onClick={() => setEditingBooking(booking)}
                             className="p-2 text-gray-400 hover:text-green-600 transition-colors"
@@ -3107,6 +3141,7 @@ function SettingsManager({ user, setToast }: { user: any, setToast: (t: any) => 
   const [bookingTypes, setBookingTypes] = useState<BookingType[]>([]);
   const [userType, setUserType] = useState<'professor' | 'court_owner'>('professor');
   const [whatsappTemplate, setWhatsappTemplate] = useState('');
+  const [studentEditTemplate, setStudentEditTemplate] = useState('');
   const [newTypeName, setNewTypeName] = useState('');
   const [newTypePrice, setNewTypePrice] = useState('');
   const [loading, setLoading] = useState(false);
@@ -3126,6 +3161,7 @@ function SettingsManager({ user, setToast }: { user: any, setToast: (t: any) => 
         setBookingTypes(data.booking_types || DEFAULT_BOOKING_TYPES);
         setUserType(data.user_type || 'professor');
         setWhatsappTemplate(data.whatsapp_template || '');
+        setStudentEditTemplate(data.student_edit_template || '');
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'settings'));
     return () => unsubscribe();
@@ -3144,7 +3180,8 @@ function SettingsManager({ user, setToast }: { user: any, setToast: (t: any) => 
         booking_types: bookingTypes,
         agenda_start_day: agendaStartDay,
         agenda_duration: agendaDuration,
-        whatsapp_template: whatsappTemplate.trim()
+        whatsapp_template: whatsappTemplate.trim(),
+        student_edit_template: studentEditTemplate.trim()
       });
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 3000);
@@ -3275,11 +3312,11 @@ function SettingsManager({ user, setToast }: { user: any, setToast: (t: any) => 
 
           <div className="space-y-4 pt-2 border-t">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-gray-400 uppercase tracking-widest px-1">Modelo de Mensagem (Postar WhatsApp)</label>
-              <div className="text-[10px] text-green-600 font-bold bg-green-50 px-2 py-0.5 rounded-full uppercase tracking-tighter">Personalizável</div>
+              <label className="text-xs font-bold text-gray-400 uppercase tracking-widest px-1">Modelo: Link de Agendamento (Agenda)</label>
+              <div className="text-[10px] text-green-600 font-bold bg-green-50 px-2 py-0.5 rounded-full uppercase tracking-tighter">Padrão</div>
             </div>
             <textarea 
-              rows={5}
+              rows={4}
               placeholder={`Ex:\nOlá! Esta é a agenda de {local}.\nPara agendar com {nome} acesse:\n{link}\n\nHorários:\n{horarios}`}
               className="w-full px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none text-sm font-sans resize-none"
               value={whatsappTemplate}
@@ -3292,6 +3329,29 @@ function SettingsManager({ user, setToast }: { user: any, setToast: (t: any) => 
                 <span className="text-[10px] text-blue-600"><b>{`{local}`}</b>: Nome do local</span>
                 <span className="text-[10px] text-blue-600"><b>{`{link}`}</b>: Link de agendamento</span>
                 <span className="text-[10px] text-blue-600"><b>{`{horarios}`}</b>: Lista das datas e horas</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4 pt-2 border-t">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-gray-400 uppercase tracking-widest px-1">Modelo: Link de Edição (WhatsApp Aluno)</label>
+              <div className="text-[10px] text-blue-600 font-bold bg-blue-50 px-2 py-0.5 rounded-full uppercase tracking-tighter">Novo</div>
+            </div>
+            <textarea 
+              rows={4}
+              placeholder={`Ex:\nOlá {telefone}!\nSua reserva em {local} está confirmada para {agenda}.\nSe precisar alterar, acesse:\n{link}`}
+              className="w-full px-4 py-3 bg-gray-50 border-none rounded-xl focus:ring-2 focus:ring-green-500 outline-none text-sm font-sans resize-none"
+              value={studentEditTemplate}
+              onChange={e => setStudentEditTemplate(e.target.value)}
+            />
+            <div className="bg-blue-50 p-3 rounded-xl space-y-2">
+              <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Como usar as Tags (Aluno):</p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                <span className="text-[10px] text-blue-600"><b>{`{telefone}`}</b>: Nome/Tel do Aluno</span>
+                <span className="text-[10px] text-blue-600"><b>{`{local}`}</b>: Local da reserva</span>
+                <span className="text-[10px] text-blue-600"><b>{`{agenda}`}</b>: Data e Hora</span>
+                <span className="text-[10px] text-blue-600"><b>{`{link}`}</b>: Link de Edição</span>
               </div>
             </div>
           </div>
