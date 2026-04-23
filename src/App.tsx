@@ -140,6 +140,7 @@ export default function App() {
       const hasLoc = params.has('loc');
       const hasProf = params.has('prof');
       const hasTid = params.has('tid');
+      const hasBooking = params.has('b');
 
       if (profFromUrl) {
         setActiveTeacherName(profFromUrl);
@@ -148,9 +149,9 @@ export default function App() {
       // Hidden access via /admin or if already authenticated
       if (window.location.pathname === '/loja') {
         setView('shop');
-      } else if ((currentUser || window.location.pathname === '/admin') && !hasLoc && !hasProf && !hasTid) {
+      } else if ((currentUser || window.location.pathname === '/admin') && !hasLoc && !hasProf && !hasTid && !hasBooking) {
         setView(currentUser ? 'admin' : 'login');
-      } else if (hasLoc || hasProf || hasTid) {
+      } else if (hasLoc || hasProf || hasTid || hasBooking) {
         setView('public');
       }
     });
@@ -308,6 +309,8 @@ function PublicBooking({
   const [availableDays, setAvailableDays] = useState<string[]>([]);
   const [slots, setSlots] = useState<Slot[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
+  const [existingBooking, setExistingBooking] = useState<any>(null);
+  const [isStudentEditing, setIsStudentEditing] = useState(false);
   const [formData, setFormData] = useState({ name: '', phone: '', type: 'Individual' });
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [lastBooking, setLastBooking] = useState<any>(null);
@@ -315,6 +318,36 @@ function PublicBooking({
   const bookingFormRef = useRef<HTMLDivElement>(null);
   const [params] = useState(() => new URLSearchParams(window.location.search));
   const hasLocParam = params.has('loc');
+  const hasBookingParam = params.has('b');
+
+  useEffect(() => {
+    const bookingId = params.get('b');
+    if (bookingId) {
+      const fetchBooking = async () => {
+        try {
+          const bookingDoc = await getDoc(doc(db, 'bookings', bookingId));
+          if (bookingDoc.exists()) {
+            const bData = { id: bookingDoc.id, ...bookingDoc.data() } as Booking;
+            setExistingBooking(bData);
+            setIsStudentEditing(true);
+            setFormData({
+              name: bData.student_name,
+              phone: bData.student_phone,
+              type: bData.booking_type
+            });
+            // Fetch location to set everything up
+            const locDoc = await getDoc(doc(db, 'locations', bData.location_id));
+            if (locDoc.exists()) {
+              setSelectedLocation({ id: locDoc.id, ...locDoc.data() } as Location);
+            }
+          }
+        } catch (error) {
+          console.error("Error fetching student booking:", error);
+        }
+      };
+      fetchBooking();
+    }
+  }, [params]);
 
   useEffect(() => {
     if (selectedSlot) {
@@ -353,6 +386,19 @@ function PublicBooking({
           }
         } catch (error) {
           console.error("Erro ao buscar por nome:", error);
+        }
+      }
+
+      // 3. Tenta buscar pelo ID da reserva (b=...)
+      if (!teacherId && params.get('b')) {
+        try {
+          const bId = params.get('b') as string;
+          const bDoc = await getDoc(doc(db, 'bookings', bId));
+          if (bDoc.exists()) {
+            teacherId = bDoc.data().teacher_id;
+          }
+        } catch (error) {
+          console.error("Erro ao buscar por reserva:", error);
         }
       }
 
@@ -424,17 +470,22 @@ function PublicBooking({
     if (selectedLocation) {
       const q = query(
         collection(db, 'slots'), 
-        where('location_id', '==', selectedLocation.id),
-        where('is_available', '==', true)
+        where('location_id', '==', selectedLocation.id)
       );
       const unsubscribe = onSnapshot(q, (snapshot) => {
-        const allSlots = snapshot.docs.map(doc => doc.data() as Slot);
+        const allSlots = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Slot));
         const todayStr = format(startOfToday(), 'yyyy-MM-dd');
         const now = new Date();
         const currentTime = format(now, 'HH:mm');
 
+        // Filter: available slots OR the one currently booked by this student
+        const filterableSlots = allSlots.filter(s => {
+          const isOwnSlot = isStudentEditing && existingBooking && s.id === existingBooking.slot_id;
+          return s.is_available || isOwnSlot;
+        });
+
         // Filter out past days and past times of today
-        const futureSlots = allSlots.filter(s => {
+        const futureSlots = filterableSlots.filter(s => {
           if (s.date < todayStr) return false;
           if (s.date === todayStr && s.time <= currentTime) return false;
           return true;
@@ -444,12 +495,18 @@ function PublicBooking({
         setAvailableDays(days);
         
         if (days.length > 0 && (!selectedDate || !days.includes(format(selectedDate, 'yyyy-MM-dd')))) {
-          setSelectedDate(parseISO(days[0]));
+          // If we are editing, try to stay on the current date of the booking initially
+          const bookingDate = existingBooking?.date;
+          if (isStudentEditing && bookingDate && days.includes(bookingDate)) {
+            setSelectedDate(parseISO(bookingDate));
+          } else {
+            setSelectedDate(parseISO(days[0]));
+          }
         }
       }, (error) => handleFirestoreError(error, OperationType.LIST, 'slots'));
       return () => unsubscribe();
     }
-  }, [selectedLocation]);
+  }, [selectedLocation, isStudentEditing, existingBooking]);
 
   useEffect(() => {
     if (selectedLocation && selectedDate) {
@@ -457,8 +514,7 @@ function PublicBooking({
       const q = query(
         collection(db, 'slots'),
         where('location_id', '==', selectedLocation.id),
-        where('date', '==', dateStr),
-        where('is_available', '==', true)
+        where('date', '==', dateStr)
       );
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const filtered = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Slot));
@@ -466,7 +522,13 @@ function PublicBooking({
         const now = new Date();
         const currentTime = format(now, 'HH:mm');
 
-        const futureSlots = filtered.filter(s => {
+        // Filter: available slots OR the one currently booked by this student
+        const filterableSlots = filtered.filter(s => {
+          const isOwnSlot = isStudentEditing && existingBooking && s.id === existingBooking.slot_id;
+          return s.is_available || isOwnSlot;
+        });
+
+        const futureSlots = filterableSlots.filter(s => {
           if (s.date < todayStr) return false;
           if (s.date === todayStr && s.time <= currentTime) return false;
           return true;
@@ -476,7 +538,7 @@ function PublicBooking({
       }, (error) => handleFirestoreError(error, OperationType.LIST, 'slots'));
       return () => unsubscribe();
     }
-  }, [selectedDate, selectedLocation]);
+  }, [selectedDate, selectedLocation, isStudentEditing, existingBooking]);
 
   const handleBooking = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -495,47 +557,124 @@ function PublicBooking({
       const selectedType = activeBookingTypes.find(t => t.name === formData.type);
       const dateStr = format(selectedDate, 'yyyy-MM-dd');
 
-      // Update slot availability
-      await updateDoc(doc(db, 'slots', selectedSlot.id), {
-        is_available: false
-      });
+      if (isStudentEditing && existingBooking) {
+        // 1. Libera o slot antigo
+        await updateDoc(doc(db, 'slots', existingBooking.slot_id), { is_available: true });
+        
+        // 2. Reserva o novo slot
+        await updateDoc(doc(db, 'slots', selectedSlot.id), { is_available: false });
 
-      // Add booking
-      const bookingId = Date.now().toString();
-      const bookingData = {
-        id: bookingId,
-        slot_id: selectedSlot.id,
-        teacher_id: selectedLocation?.teacher_id,
-        student_name: formData.name,
-        student_phone: formData.phone,
-        booking_type: formData.type,
-        price: selectedType?.price || 0,
-        paid: false,
-        date: dateStr,
-        time: selectedSlot.time,
-        location_name: selectedLocation?.name || '',
-        location_id: selectedLocation?.id || '',
-        user_type: appSettings?.user_type || 'professor'
-      };
+        // 3. Atualiza a reserva
+        const bookingData = {
+          slot_id: selectedSlot.id,
+          booking_type: formData.type,
+          price: selectedType?.price || 0,
+          date: dateStr,
+          time: selectedSlot.time,
+          location_name: selectedLocation?.name || '',
+          location_id: selectedLocation?.id || ''
+        };
+        await updateDoc(doc(db, 'bookings', existingBooking.id), bookingData);
 
-      await setDoc(doc(db, 'bookings', bookingId), bookingData);
+        const fullBooking = {
+          ...existingBooking,
+          ...bookingData,
+          teacher_name: appSettings?.teacher_name || (appSettings?.user_type === 'court_owner' ? 'Responsável' : 'Seu Instrutor')
+        };
+        setLastBooking(fullBooking);
+        setStatus('success');
 
-      setLastBooking({
-        ...bookingData,
-        teacher_name: appSettings?.teacher_name || (appSettings?.user_type === 'court_owner' ? 'Responsável' : 'Seu Instrutor')
-      });
-      setStatus('success');
+        // Sincronização Automática com Google Calendar (se habilitado)
+        if (appSettings?.google_script_url && existingBooking.google_event_id) {
+          try {
+            const scriptUrl = appSettings.google_script_url.trim();
+            if (scriptUrl.includes('/exec')) {
+              const googleUrl = new URL(scriptUrl);
+              const eventLabel = (appSettings?.user_type === 'court_owner') ? 'Reserva' : 'Aula';
+              const syncParams = {
+                titulo: `${eventLabel} (${formData.type}): ${formData.name}`,
+                inicio: `${dateStr} ${selectedSlot.time}`,
+                fim: `${dateStr} ${selectedSlot.time}`,
+                descricao: `Tipo: ${formData.type}\nTelefone: ${formData.phone}\n(Editado pelo Aluno)`,
+                local: selectedLocation?.name || '',
+                id_evento: existingBooking.google_event_id,
+                id_sistema: existingBooking.id
+              };
+              
+              Object.entries(syncParams).forEach(([key, value]) => googleUrl.searchParams.append(key, value));
+              
+              const callbackName = `cb${Math.floor(Math.random() * 1000000)}`;
+              const script = document.createElement('script');
+              script.src = `${googleUrl.toString()}&callback=${callbackName}`;
+              script.async = true;
+              (window as any)[callbackName] = () => {
+                delete (window as any)[callbackName];
+                if (document.head.contains(script)) document.head.removeChild(script);
+              };
+              document.head.appendChild(script);
+            }
+          } catch (syncError) {
+            console.error('Erro na sincronização automática:', syncError);
+          }
+        }
 
-      // Send WhatsApp Notification
-      try {
-        if (appSettings?.whatsapp_enabled !== false) {
-          const instructorLabel = appSettings?.user_type === 'court_owner' ? 'Responsável' : 'Nome';
-          const instructorName = appSettings?.teacher_name || (appSettings?.user_type === 'court_owner' ? 'Responsável' : 'Nome');
-          const bookingLabel = appSettings?.user_type === 'court_owner' ? 'Reserva de Quadra' : 'Reserva de Aula';
-          const userLabel = appSettings?.user_type === 'court_owner' ? 'Cliente' : 'Aluno';
-          
-          const message = `🎾 *Nova ${bookingLabel}!*
-          
+        // Notificação de Edição via WhatsApp
+        try {
+          if (appSettings?.whatsapp_enabled !== false) {
+            const instructorLabel = appSettings?.user_type === 'court_owner' ? 'Responsável' : 'Professor';
+            const instructorName = appSettings?.teacher_name || '';
+            const msg = `🎾 *Reserva Alterada pelo Aluno!*\n\n👤 *${instructorLabel}:* ${instructorName}\n📍 *Local:* ${selectedLocation?.name}\n📅 *Nova Data:* ${format(selectedDate, "dd/MM/yyyy")}\n⏰ *Novo Horário:* ${selectedSlot.time}\n👤 *Aluno:* ${formData.name}\n📞 *Contato:* ${formData.phone}\n📝 *Tipo:* ${formData.type}`;
+            
+            await fetch('https://bedinoto.uazapi.com/send/text', {
+              method: 'POST',
+              headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'token': 'a5fdab6f-0e1d-407c-aa4e-e6b44f935509' },
+              body: JSON.stringify({ number: appSettings?.whatsapp_number || "555599731123", text: msg })
+            });
+          }
+        } catch (e) { console.error(e); }
+
+      } else {
+        // Update slot availability
+        await updateDoc(doc(db, 'slots', selectedSlot.id), {
+          is_available: false
+        });
+
+        // Add booking
+        const bookingId = Date.now().toString();
+        const bookingData = {
+          id: bookingId,
+          slot_id: selectedSlot.id,
+          teacher_id: selectedLocation?.teacher_id,
+          student_name: formData.name,
+          student_phone: formData.phone,
+          booking_type: formData.type,
+          price: selectedType?.price || 0,
+          paid: false,
+          date: dateStr,
+          time: selectedSlot.time,
+          location_name: selectedLocation?.name || '',
+          location_id: selectedLocation?.id || '',
+          user_type: appSettings?.user_type || 'professor'
+        };
+
+        await setDoc(doc(db, 'bookings', bookingId), bookingData);
+
+        setLastBooking({
+          ...bookingData,
+          teacher_name: appSettings?.teacher_name || (appSettings?.user_type === 'court_owner' ? 'Responsável' : 'Seu Instrutor')
+        });
+        setStatus('success');
+
+        // Send WhatsApp Notification
+        try {
+          if (appSettings?.whatsapp_enabled !== false) {
+            const instructorLabel = appSettings?.user_type === 'court_owner' ? 'Responsável' : 'Nome';
+            const instructorName = appSettings?.teacher_name || (appSettings?.user_type === 'court_owner' ? 'Responsável' : 'Nome');
+            const bookingLabel = appSettings?.user_type === 'court_owner' ? 'Reserva de Quadra' : 'Reserva de Aula';
+            const userLabel = appSettings?.user_type === 'court_owner' ? 'Cliente' : 'Aluno';
+            
+            const message = `🎾 *Nova ${bookingLabel}!*
+            
 👤 *${instructorLabel}:* ${instructorName}
 📍 *Local:* ${selectedLocation?.name}
 📅 *Data:* ${format(selectedDate, "dd/MM/yyyy")}
@@ -544,25 +683,26 @@ function PublicBooking({
 📞 *Contato:* ${formData.phone}
 📝 *Categoria:* ${formData.type}`;
 
-          await fetch('https://bedinoto.uazapi.com/send/text', {
-            method: 'POST',
-            headers: {
-              'Accept': 'application/json',
-              'Content-Type': 'application/json',
-              'token': 'a5fdab6f-0e1d-407c-aa4e-e6b44f935509'
-            },
-            body: JSON.stringify({
-              number: appSettings?.whatsapp_number || "555599731123",
-              text: message
-            })
-          });
+            await fetch('https://bedinoto.uazapi.com/send/text', {
+              method: 'POST',
+              headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'token': 'a5fdab6f-0e1d-407c-aa4e-e6b44f935509'
+              },
+              body: JSON.stringify({
+                number: appSettings?.whatsapp_number || "555599731123",
+                text: message
+              })
+            });
+          }
+        } catch (notifyError) {
+          console.error('Erro ao enviar notificação:', notifyError);
         }
-      } catch (notifyError) {
-        console.error('Erro ao enviar notificação:', notifyError);
       }
 
       setSelectedSlot(null);
-      setFormData({ name: '', phone: '', type: 'Individual' });
+      if (!isStudentEditing) setFormData({ name: '', phone: '', type: 'Individual' });
     } catch (err) {
       console.error(err);
       setStatus('error');
@@ -593,7 +733,7 @@ function PublicBooking({
     return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dates}&details=${details}&location=${location}`;
   };
 
-  if (!hasLocParam) {
+  if (!hasLocParam && !hasBookingParam) {
     return (
       <motion.div 
         initial={{ opacity: 0, scale: 0.95 }}
@@ -666,19 +806,38 @@ function PublicBooking({
           {!appSettings ? (
             <div className="h-9 w-48 bg-gray-200 animate-pulse mx-auto rounded-lg"></div>
           ) : (
-            appSettings.user_type === 'court_owner' ? 'Reserve sua Quadra' : 'Reserve sua Aula'
+            appSettings.user_type === 'court_owner' 
+              ? (isStudentEditing ? 'Alterar Reserva de Quadra' : 'Reserve sua Quadra') 
+              : (isStudentEditing ? 'Alterar Reserva de Aula' : 'Reserve sua Aula')
           )}
         </h2>
         <p className="text-gray-500">
           {!appSettings ? (
             <div className="h-5 w-64 bg-gray-100 animate-pulse mx-auto rounded-md mt-2"></div>
           ) : (
-            appSettings.user_type === 'court_owner' 
-              ? 'Escolha a quadra e o horário para o seu jogo!' 
-              : 'Escolha o local e horário para começar a treinar!'
+            isStudentEditing && existingBooking 
+              ? `Olá ${existingBooking.student_name}, escolha seu novo horário!`
+              : appSettings.user_type === 'court_owner' 
+                ? 'Escolha a quadra e o horário para o seu jogo!' 
+                : 'Escolha o local e horário para começar a treinar!'
           )}
         </p>
       </div>
+
+      {isStudentEditing && existingBooking && (
+        <div className="max-w-2xl mx-auto bg-blue-50 border border-blue-100 p-6 rounded-3xl flex items-start gap-4 shadow-sm">
+          <div className="p-3 bg-blue-600 text-white rounded-2xl shadow-lg shadow-blue-100">
+            <Edit2 size={24} />
+          </div>
+          <div>
+            <h4 className="font-bold text-blue-900">Editando Reserva Atual</h4>
+            <p className="text-sm text-blue-700 leading-relaxed">
+              Sua reserva atual está marcada para <span className="font-bold">{format(parseISO(existingBooking.date), 'dd/MM/yyyy')} às {existingBooking.time}</span>. 
+              Ao escolher um novo horário abaixo e confirmar, a vaga antiga será liberada automaticamente.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Location Selector */}
       <div className="space-y-4">
@@ -878,7 +1037,7 @@ function PublicBooking({
               disabled={status === 'loading'}
               className="w-full bg-green-600 text-white py-4 rounded-xl font-bold shadow-lg shadow-green-200 hover:bg-green-700 transition-all disabled:opacity-50"
             >
-              {status === 'loading' ? 'Processando...' : 'Confirmar Reserva'}
+              {status === 'loading' ? 'Processando...' : isStudentEditing ? 'Confirmar Alteração de Reserva' : 'Confirmar Reserva'}
             </button>
           </form>
         </motion.div>
@@ -890,16 +1049,20 @@ function PublicBooking({
           <motion.div 
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="bg-white p-8 rounded-3xl text-center space-y-4 max-w-sm w-full"
+            className="bg-white p-8 rounded-3xl text-center space-y-4 max-w-sm w-full shadow-2xl"
           >
-            <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto">
+            <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto shadow-inner">
               <CheckCircle size={40} />
             </div>
-            <h3 className="text-2xl font-bold">Reserva Confirmada!</h3>
-            <p className="text-gray-500">
-              {appSettings?.user_type === 'court_owner' 
-                ? 'Seu horário foi agendado com sucesso. Bom jogo!' 
-                : 'Sua aula foi agendada com sucesso. Nos vemos na quadra!'}
+            <h3 className="text-2xl font-bold">
+              {isStudentEditing ? 'Reserva Atualizada!' : 'Reserva Confirmada!'}
+            </h3>
+            <p className="text-gray-500 leading-relaxed">
+              {isStudentEditing 
+                ? 'Sua reserva foi alterada com sucesso. Já avisamos seu professor!' 
+                : appSettings?.user_type === 'court_owner' 
+                  ? 'Seu horário foi agendado com sucesso. Bom jogo!' 
+                  : 'Sua aula foi agendada com sucesso. Nos vemos na quadra!'}
             </p>
             
             <div className="space-y-3 pt-4">
@@ -2029,6 +2192,21 @@ function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherNam
                             ) : (
                               <CalendarIcon size={18} />
                             )}
+                          </button>
+                          <button 
+                            onClick={async () => {
+                              const editLink = `${window.location.origin}/?b=${booking.id}`;
+                              try {
+                                await navigator.clipboard.writeText(editLink);
+                                setToast({ message: 'Link para o aluno copiado!', type: 'success' });
+                              } catch (err) {
+                                setToast({ message: 'Erro ao copiar link.', type: 'error' });
+                              }
+                            }}
+                            className="p-2 text-gray-400 hover:text-blue-600 transition-colors"
+                            title="Copiar link para o aluno ver/editar reserva"
+                          >
+                            <ExternalLink size={18} />
                           </button>
                           <button 
                             onClick={() => {
@@ -3695,6 +3873,15 @@ function ProductManager({ user, setToast }: { user: any, setToast: (t: any) => v
           </div>
         )}
       </AnimatePresence>
+      <ConfirmModal 
+        isOpen={confirmConfig.isOpen}
+        onClose={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmConfig.onConfirm}
+        title={confirmConfig.title}
+        message={confirmConfig.message}
+        type={confirmConfig.type}
+        confirmText={confirmConfig.confirmText}
+      />
     </div>
   );
 }
