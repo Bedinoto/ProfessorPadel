@@ -26,6 +26,7 @@ import {
   TrendingUp,
   MapPin,
   Settings as SettingsIcon,
+  Bell,
   Edit2,
   Share2,
   FileText,
@@ -120,6 +121,7 @@ export default function App() {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [activeTeacherName, setActiveTeacherName] = useState('');
   const [activeUserType, setActiveUserType] = useState<'professor' | 'court_owner' | null>(null);
+  const [unsyncedCount, setUnsyncedCount] = useState(0);
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error' | 'info'} | null>(null);
 
   useEffect(() => {
@@ -160,14 +162,28 @@ export default function App() {
 
   useEffect(() => {
     if (user) {
-      const unsubscribe = onSnapshot(doc(db, 'settings', user.uid), (snapshot) => {
+      // Monitorar agendamentos não sincronizados
+      const q = query(
+        collection(db, 'bookings'),
+        where('teacher_id', '==', user.uid),
+        where('google_synced', '==', false)
+      );
+      const unsubscribeBookings = onSnapshot(q, (snapshot) => {
+        setUnsyncedCount(snapshot.size);
+      });
+
+      const unsubscribeSettings = onSnapshot(doc(db, 'settings', user.uid), (snapshot) => {
         if (snapshot.exists()) {
           const data = snapshot.data();
           setActiveTeacherName(data.teacher_name || user.displayName || user.email?.split('@')[0]);
           setActiveUserType(data.user_type || 'professor');
         }
-      });
-      return () => unsubscribe();
+      }, (error) => handleFirestoreError(error, OperationType.GET, 'settings'));
+
+      return () => {
+        unsubscribeBookings();
+        unsubscribeSettings();
+      };
     }
   }, [user]);
 
@@ -226,15 +242,21 @@ export default function App() {
               <div className="flex items-center gap-4">
                 <button 
                   onClick={() => setView('admin')}
-                  className={`text-sm font-medium transition-colors ${view === 'admin' ? 'text-green-600' : 'text-gray-600 hover:text-green-600'}`}
+                  className={`relative p-2 rounded-full transition-all group ${view === 'admin' ? 'bg-green-100 text-green-600' : 'text-gray-600 hover:bg-gray-100 hover:text-green-600'}`}
+                  title="Painel Administrativo"
                 >
-                  Dashboard
+                  <Bell size={20} className={unsyncedCount > 0 ? "animate-swing origin-top" : ""} />
+                  {unsyncedCount > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white border-2 border-white animate-in zoom-in duration-300">
+                      {unsyncedCount}
+                    </span>
+                  )}
                 </button>
                 <button 
                   onClick={handleLogout}
                   className="flex items-center gap-1 text-sm font-medium text-red-500 hover:text-red-600"
                 >
-                  <LogOut size={16} /> Sair
+                  <LogOut size={16} /> <span className="hidden sm:inline">Sair</span>
                 </button>
               </div>
             )}
@@ -265,7 +287,7 @@ export default function App() {
           )}
           {view === 'admin' && user && (
             <motion.div key="admin" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <AdminDashboard user={user} teacherName={activeTeacherName} setToast={setToast} />
+              <AdminDashboard user={user} teacherName={activeTeacherName} setToast={setToast} unsyncedCount={unsyncedCount} />
             </motion.div>
           )}
         </AnimatePresence>
@@ -654,7 +676,8 @@ function PublicBooking({
           time: selectedSlot.time,
           location_name: selectedLocation?.name || '',
           location_id: selectedLocation?.id || '',
-          user_type: appSettings?.user_type || 'professor'
+          user_type: appSettings?.user_type || 'professor',
+          google_synced: false
         };
 
         await setDoc(doc(db, 'bookings', bookingId), bookingData);
@@ -1368,7 +1391,8 @@ function ManualBookingModal({
         time: formData.time,
         location_name: selectedLocation?.name || '',
         location_id: formData.location_id,
-        user_type: appSettings?.user_type || 'professor'
+        user_type: appSettings?.user_type || 'professor',
+        google_synced: false
       };
 
       await setDoc(doc(db, 'bookings', bookingId), bookingData);
@@ -1527,7 +1551,7 @@ function ManualBookingModal({
   );
 }
 
-function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherName: string, setToast: (t: any) => void }) {
+function AdminDashboard({ user, teacherName, setToast, unsyncedCount }: { user: any, teacherName: string, setToast: (t: any) => void, unsyncedCount: number }) {
   const [tab, setTab] = useState<'schedule' | 'bookings' | 'finance' | 'locations' | 'settings' | 'products' | 'superadmin'>('schedule');
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [finance, setFinance] = useState<FinanceSummary | null>(null);
@@ -1827,6 +1851,30 @@ function AdminDashboard({ user, teacherName, setToast }: { user: any, teacherNam
 
   return (
     <div className="space-y-8">
+      {unsyncedCount > 0 && (
+        <motion.div 
+          initial={{ opacity: 0, y: -10 }} 
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-red-50 border border-red-100 p-4 rounded-2xl flex items-center justify-between"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-red-100 text-red-600 rounded-xl">
+              <Bell size={18} className="animate-swing origin-top" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-red-900">Agendamentos Pendentes de Sincronização</p>
+              <p className="text-xs text-red-600">Você tem {unsyncedCount} {unsyncedCount === 1 ? 'reserva que ainda não está' : 'reservas que ainda não estão'} no seu Google Calendar.</p>
+            </div>
+          </div>
+          <button 
+            onClick={() => setTab('bookings')}
+            className="px-4 py-2 bg-red-600 text-white text-xs font-bold rounded-lg hover:bg-red-700 transition-all shadow-sm active:scale-95 whitespace-nowrap"
+          >
+            VER AGORA
+          </button>
+        </motion.div>
+      )}
+
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Painel de Controle</h2>
