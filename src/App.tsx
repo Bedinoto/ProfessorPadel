@@ -2879,7 +2879,7 @@ function ScheduleManager({
         const title = appSettings?.user_type === 'court_owner' ? 'Horários disponíveis' : 'Horários disponíveis para Aulas';
         const label = appSettings?.user_type === 'court_owner' ? 'Responsável' : 'Nome';
         const footerTitle = appSettings?.user_type === 'court_owner' ? 'Hora de reservar sua quadra!' : 'Hora de agendar sua aula!';
-        const cta = appSettings?.user_type === 'court_owner' ? 'Escolha seu melhor horário' : 'Escolha seu melhor horário diretamente pelo link';
+        const cta = appSettings?.user_type === 'court_owner' ? 'Faça sua reserva' : 'Faça sua reserva diretamente pelo link';
         
         const header = `📅 ${title}\n👤 ${label}: ${teacherName}\n📍 ${selectedLocation.name}\n\n`;
         const footer = `📅 ${footerTitle}\n\n${cta}:\n👉 ${bookingLink}\n\nOu, se preferir, me envie uma mensagem aqui no WhatsApp. Vamos evoluir juntos!`;
