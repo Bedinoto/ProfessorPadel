@@ -589,6 +589,8 @@ function PublicBooking({
         // 3. Atualiza a reserva
         const bookingData = {
           slot_id: selectedSlot.id,
+          student_name: formData.name,
+          student_phone: formData.phone,
           booking_type: formData.type,
           price: selectedType?.price || 0,
           date: dateStr,
@@ -2448,6 +2450,8 @@ function EditBookingModal({
   const [selectedLocationId, setSelectedLocationId] = useState('');
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedSlotId, setSelectedSlotId] = useState(booking.slot_id);
+  const [studentName, setStudentName] = useState(booking.student_name);
+  const [studentPhone, setStudentPhone] = useState(booking.student_phone);
   const [bookingType, setBookingType] = useState(booking.booking_type);
   const [googleEventId, setGoogleEventId] = useState(booking.google_event_id || '');
   const [loading, setLoading] = useState(false);
@@ -2492,6 +2496,8 @@ function EditBookingModal({
       const selectedType = activeBookingTypes.find(t => t.name === bookingType);
       
       const updates: any = {
+        student_name: studentName,
+        student_phone: studentPhone,
         booking_type: bookingType,
         price: selectedType?.price || 0,
         google_event_id: googleEventId.trim(),
@@ -2573,10 +2579,32 @@ function EditBookingModal({
         </div>
 
         <form onSubmit={handleSave} className="space-y-6">
-          <div className="bg-gray-50 p-4 rounded-xl space-y-2">
-            <p className="text-xs font-bold text-gray-400 uppercase">Reserva Atual</p>
-            <div className="text-sm">
-              <span className="font-bold underline decoration-green-500">{booking.student_name}</span> - {booking.location_name} - {format(parseISO(booking.date), 'dd/MM')} às {booking.time}
+          <div className="bg-gray-50 p-4 rounded-xl space-y-4">
+            <p className="text-xs font-bold text-gray-400 uppercase">Dados do Cliente</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-gray-400 uppercase">Nome</label>
+                <input 
+                  type="text"
+                  className="w-full px-4 py-2 bg-white border-none rounded-lg focus:ring-2 focus:ring-green-500 outline-none text-sm"
+                  value={studentName}
+                  onChange={e => setStudentName(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-gray-400 uppercase">Telefone</label>
+                <input 
+                  type="tel"
+                  className="w-full px-4 py-2 bg-white border-none rounded-lg focus:ring-2 focus:ring-green-500 outline-none text-sm"
+                  value={studentPhone}
+                  onChange={e => setStudentPhone(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
+            <div className="text-xs text-gray-400 pt-2 border-t border-gray-100">
+              <span className="font-bold">Reserva Original:</span> {booking.location_name} - {format(parseISO(booking.date), 'dd/MM')} às {booking.time}
             </div>
           </div>
 
