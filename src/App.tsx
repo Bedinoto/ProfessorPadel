@@ -496,9 +496,9 @@ function PublicBooking({
       );
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const allSlots = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Slot));
-        const todayStr = format(startOfToday(), 'yyyy-MM-dd');
-        const now = new Date();
-        const currentTime = format(now, 'HH:mm');
+        const bNow = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+        const todayStr = format(bNow, 'yyyy-MM-dd');
+        const currentTime = format(bNow, 'HH:mm');
 
         // Filter: available slots OR the one currently booked by this student
         const filterableSlots = allSlots.filter(s => {
@@ -540,9 +540,9 @@ function PublicBooking({
       );
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const filtered = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Slot));
-        const todayStr = format(startOfToday(), 'yyyy-MM-dd');
-        const now = new Date();
-        const currentTime = format(now, 'HH:mm');
+        const bNow = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+        const todayStr = format(bNow, 'yyyy-MM-dd');
+        const currentTime = format(bNow, 'HH:mm');
 
         // Filter: available slots OR the one currently booked by this student
         const filterableSlots = filtered.filter(s => {
@@ -1329,7 +1329,7 @@ function ManualBookingModal({
     student_phone: '',
     booking_type: appSettings?.booking_types?.[0]?.name || 'Individual',
     location_id: locations[0]?.id || '',
-    date: format(new Date(), 'yyyy-MM-dd'),
+    date: format(new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" })), 'yyyy-MM-dd'),
     time: '08:00'
   });
 
@@ -1799,7 +1799,8 @@ function AdminDashboard({ user, teacherName, setToast, unsyncedCount }: { user: 
       doc.text(filterText, 14, 30);
       
       doc.setFontSize(8);
-      doc.text(`Gerado em: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, 14, 35);
+      const generationTime = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+      doc.text(`Gerado em: ${generationTime}`, 14, 35);
 
       const tableRows = filtered.map(b => [
         format(parseISO(b.date), 'dd/MM/yy'),
@@ -2478,9 +2479,9 @@ function EditBookingModal({
     );
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const allSlots = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Slot));
-      const todayStr = format(startOfToday(), 'yyyy-MM-dd');
-      const now = new Date();
-      const currentTime = format(now, 'HH:mm');
+      const bNow = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+      const todayStr = format(bNow, 'yyyy-MM-dd');
+      const currentTime = format(bNow, 'HH:mm');
 
       const futureSlots = allSlots.filter(s => {
         if (s.date < todayStr) return false;
@@ -2850,7 +2851,8 @@ function ScheduleManager({
       const duration = appSettings?.agenda_duration || 7;
 
       // Calculate Start and End of the report
-      const today = startOfToday();
+      const bNow = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+      const today = new Date(bNow.getFullYear(), bNow.getMonth(), bNow.getDate());
       const startDateReport = startOfWeek(today, { weekStartsOn: startDay as any });
       const endDateReport = addDays(startDateReport, duration - 1);
       
@@ -2884,8 +2886,22 @@ function ScheduleManager({
         if (date < today) continue;
 
         const dateStr = format(date, 'yyyy-MM-dd');
-        const daySlots = grouped[dateStr] || [];
+        let daySlots = [...(grouped[dateStr] || [])];
         
+        // Filter slots if the day is today to remove past times
+        if (isSameDay(date, new Date())) {
+          // Get current time specifically in Brazil (Sao Paulo) timezone
+          const nowStr = new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" });
+          const now = new Date(nowStr);
+          const currentHour = now.getHours();
+          const currentMinute = now.getMinutes();
+          
+          daySlots = daySlots.filter(time => {
+            const [hour, minute] = time.split(':').map(Number);
+            return hour > currentHour || (hour === currentHour && minute > currentMinute);
+          });
+        }
+
         const dayName = format(date, "EEEE dd/MM", { locale: ptBR });
         const capitalizedDay = dayName.charAt(0).toUpperCase() + dayName.slice(1);
         
