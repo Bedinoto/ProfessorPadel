@@ -3299,28 +3299,19 @@ function SettingsManager({ user, setToast }: { user: any, setToast: (t: any) => 
           Configurações
         </h3>
 
-        <div className="bg-gray-50 p-4 rounded-2xl flex items-center justify-between gap-4">
-          <div className="flex items-start gap-4">
-            <div className={`p-3 rounded-xl ${userType === 'court_owner' ? 'bg-purple-100 text-purple-600' : 'bg-green-100 text-green-600'}`}>
-              {userType === 'court_owner' ? <MapPin size={20} /> : <User size={20} />}
-            </div>
-            <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Tipo de Conta</p>
-              <p className="font-bold text-gray-900">{userType === 'court_owner' ? 'Dono de Quadra' : 'Professor'}</p>
-              <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
-                {userType === 'court_owner' 
-                  ? 'Focado em locação de quadras e equipamentos' 
-                  : 'Focado em aulas e pacotes de treinamento'}
-              </p>
-            </div>
+        <div className="bg-gray-50 p-4 rounded-2xl flex items-start gap-4">
+          <div className={`p-3 rounded-xl ${userType === 'court_owner' ? 'bg-purple-100 text-purple-600' : 'bg-green-100 text-green-600'}`}>
+            {userType === 'court_owner' ? <MapPin size={20} /> : <User size={20} />}
           </div>
-          <button 
-            type="button"
-            onClick={() => setUserType(userType === 'court_owner' ? 'professor' : 'court_owner')}
-            className="px-4 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold hover:bg-gray-50 transition-all shadow-sm"
-          >
-            ALTERAR TIPO
-          </button>
+          <div>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Tipo de Conta</p>
+            <p className="font-bold text-gray-900">{userType === 'court_owner' ? 'Dono de Quadra' : 'Professor'}</p>
+            <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
+              {userType === 'court_owner' 
+                ? 'Focado em locação de quadras e equipamentos' 
+                : 'Focado em aulas e pacotes de treinamento'}
+            </p>
+          </div>
         </div>
         
         <form onSubmit={handleSave} className="space-y-4">
