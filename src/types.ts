@@ -56,6 +56,7 @@ export interface AppSettings {
   is_active?: boolean;
   user_type?: 'professor' | 'court_owner';
   whatsapp_template?: string;
+  whatsapp_instance_token?: string;
 }
 
 export interface Product {

@@ -652,7 +652,11 @@ function PublicBooking({
             
             await fetch('https://bedinoto.uazapi.com/send/text', {
               method: 'POST',
-              headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'token': '394f8fdb-c390-4a89-8c55-34d8b78ce4ab' },
+              headers: { 
+                'Accept': 'application/json', 
+                'Content-Type': 'application/json', 
+                'token': appSettings?.whatsapp_instance_token || '394f8fdb-c390-4a89-8c55-34d8b78ce4ab' 
+              },
               body: JSON.stringify({ number: appSettings?.whatsapp_number || "555599731123", text: msg })
             });
           }
@@ -714,7 +718,7 @@ function PublicBooking({
               headers: {
                 'Accept': 'application/json',
                 'Content-Type': 'application/json',
-                'token': '394f8fdb-c390-4a89-8c55-34d8b78ce4ab'
+                'token': appSettings?.whatsapp_instance_token || '394f8fdb-c390-4a89-8c55-34d8b78ce4ab'
               },
               body: JSON.stringify({
                 number: appSettings?.whatsapp_number || "555599731123",
@@ -3202,6 +3206,7 @@ function SettingsManager({ user, setToast }: { user: any, setToast: (t: any) => 
   const [bookingTypes, setBookingTypes] = useState<BookingType[]>([]);
   const [userType, setUserType] = useState<'professor' | 'court_owner'>('professor');
   const [whatsappTemplate, setWhatsappTemplate] = useState('');
+  const [whatsappInstanceToken, setWhatsappInstanceToken] = useState('');
   const [studentEditTemplate, setStudentEditTemplate] = useState('');
   const [newTypeName, setNewTypeName] = useState('');
   const [newTypePrice, setNewTypePrice] = useState('');
@@ -3222,6 +3227,7 @@ function SettingsManager({ user, setToast }: { user: any, setToast: (t: any) => 
         setBookingTypes(data.booking_types || DEFAULT_BOOKING_TYPES);
         setUserType(data.user_type || 'professor');
         setWhatsappTemplate(data.whatsapp_template || '');
+        setWhatsappInstanceToken(data.whatsapp_instance_token || '394f8fdb-c390-4a89-8c55-34d8b78ce4ab');
         setStudentEditTemplate(data.student_edit_template || '');
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'settings'));
@@ -3243,6 +3249,7 @@ function SettingsManager({ user, setToast }: { user: any, setToast: (t: any) => 
         agenda_start_day: agendaStartDay,
         agenda_duration: agendaDuration,
         whatsapp_template: whatsappTemplate.trim(),
+        whatsapp_instance_token: whatsappInstanceToken.trim(),
         student_edit_template: studentEditTemplate.trim()
       });
       setShowSuccess(true);
@@ -3378,6 +3385,27 @@ function SettingsManager({ user, setToast }: { user: any, setToast: (t: any) => 
               />
             </div>
             <p className="text-[10px] text-gray-400">Este número receberá os pedidos da loja e as notificações de agendamento.</p>
+          </div>
+
+          <div className="space-y-4 pt-4 border-t">
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                Token da Instância (API WhatsApp)
+                <div className="group relative">
+                  <AlertCircle size={12} className="text-gray-400" />
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 bg-gray-900 text-white text-[10px] rounded shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                    O token secreto da sua instância na API UAZAPI. Altere apenas se trocar de conta.
+                  </div>
+                </div>
+              </label>
+              <input
+                type="text"
+                value={whatsappInstanceToken}
+                onChange={e => setWhatsappInstanceToken(e.target.value)}
+                placeholder="Ex: 394f8fdb..."
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-green-500 outline-none transition-all text-sm font-mono"
+              />
+            </div>
           </div>
 
           <div className="space-y-4 pt-2 border-t">
