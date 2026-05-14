@@ -596,7 +596,8 @@ function PublicBooking({
           date: dateStr,
           time: selectedSlot.time,
           location_name: selectedLocation?.name || '',
-          location_id: selectedLocation?.id || ''
+          location_id: selectedLocation?.id || '',
+          google_synced: false
         };
         await updateDoc(doc(db, 'bookings', existingBooking.id), bookingData);
 
@@ -651,7 +652,7 @@ function PublicBooking({
             
             await fetch('https://bedinoto.uazapi.com/send/text', {
               method: 'POST',
-              headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'token': 'a5fdab6f-0e1d-407c-aa4e-e6b44f935509' },
+              headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'token': '394f8fdb-c390-4a89-8c55-34d8b78ce4ab' },
               body: JSON.stringify({ number: appSettings?.whatsapp_number || "555599731123", text: msg })
             });
           }
@@ -713,7 +714,7 @@ function PublicBooking({
               headers: {
                 'Accept': 'application/json',
                 'Content-Type': 'application/json',
-                'token': 'a5fdab6f-0e1d-407c-aa4e-e6b44f935509'
+                'token': '394f8fdb-c390-4a89-8c55-34d8b78ce4ab'
               },
               body: JSON.stringify({
                 number: appSettings?.whatsapp_number || "555599731123",
@@ -2580,7 +2581,7 @@ function EditBookingModal({
 
         <form onSubmit={handleSave} className="space-y-6">
           <div className="bg-gray-50 p-4 rounded-xl space-y-4">
-            <p className="text-xs font-bold text-gray-400 uppercase">Dados do Cliente</p>
+            <p className="text-xs font-bold text-gray-400 uppercase">Dados do {appSettings?.user_type === 'court_owner' ? 'Cliente' : 'Aluno'}</p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1">
                 <label className="text-[10px] font-bold text-gray-400 uppercase">Nome</label>
@@ -3234,6 +3235,7 @@ function SettingsManager({ user, setToast }: { user: any, setToast: (t: any) => 
       await setDoc(doc(db, 'settings', user.uid), {
         teacher_id: user.uid,
         teacher_name: teacherName.trim(),
+        user_type: userType,
         whatsapp_number: whatsappNumber.replace(/\D/g, ''),
         google_script_url: googleScriptUrl.trim(),
         whatsapp_enabled: whatsappEnabled,
@@ -3274,20 +3276,28 @@ function SettingsManager({ user, setToast }: { user: any, setToast: (t: any) => 
           Configurações
         </h3>
 
-        <div className="bg-gray-50 p-4 rounded-2xl flex items-start gap-4">
-          <div className={`p-3 rounded-xl ${userType === 'court_owner' ? 'bg-purple-100 text-purple-600' : 'bg-green-100 text-green-600'}`}>
-            {userType === 'court_owner' ? <MapPin size={20} /> : <User size={20} />}
+        <div className="bg-gray-50 p-4 rounded-2xl flex items-center justify-between gap-4">
+          <div className="flex items-start gap-4">
+            <div className={`p-3 rounded-xl ${userType === 'court_owner' ? 'bg-purple-100 text-purple-600' : 'bg-green-100 text-green-600'}`}>
+              {userType === 'court_owner' ? <MapPin size={20} /> : <User size={20} />}
+            </div>
+            <div>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Tipo de Conta</p>
+              <p className="font-bold text-gray-900">{userType === 'court_owner' ? 'Dono de Quadra' : 'Professor'}</p>
+              <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
+                {userType === 'court_owner' 
+                  ? 'Focado em locação de quadras e equipamentos' 
+                  : 'Focado em aulas e pacotes de treinamento'}
+              </p>
+            </div>
           </div>
-          <div>
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Tipo de Conta</p>
-            <p className="font-bold text-gray-900">{userType === 'court_owner' ? 'Dono de Quadra' : 'Professor'}</p>
-            <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-              O tipo de conta define como sua agenda e loja aparecem para os clientes.
-              {userType === 'court_owner' 
-                ? ' (Focado em locação de quadras e equipamentos)' 
-                : ' (Focado em aulas e pacotes de treinamento)'}
-            </p>
-          </div>
+          <button 
+            type="button"
+            onClick={() => setUserType(userType === 'court_owner' ? 'professor' : 'court_owner')}
+            className="px-4 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold hover:bg-gray-50 transition-all shadow-sm"
+          >
+            ALTERAR TIPO
+          </button>
         </div>
         
         <form onSubmit={handleSave} className="space-y-4">

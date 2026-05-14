@@ -104,7 +104,7 @@ service cloud.firestore {
       allow list: if isAuthenticated() && resource.data.teacher_id == request.auth.uid;
       allow create: if isValidBooking(request.resource.data); // Public can create booking
       allow update: if (isAuthenticated() && resource.data.teacher_id == request.auth.uid) || 
-                     (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['slot_id', 'student_name', 'student_phone', 'booking_type', 'price', 'date', 'time', 'location_name', 'location_id'])); 
+                     (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['slot_id', 'student_name', 'student_phone', 'booking_type', 'price', 'date', 'time', 'location_name', 'location_id', 'google_synced'])); 
       allow delete: if isAuthenticated() && resource.data.teacher_id == request.auth.uid;
     }
 
