@@ -82,6 +82,33 @@ service cloud.firestore {
              data.whatsapp_number is string;
     }
 
+    function isValidTournament(data) {
+      return data.keys().hasAll(['teacher_id', 'name', 'type', 'created_at']) &&
+             data.teacher_id is string &&
+             data.name is string && data.name.size() > 0 &&
+             data.type is string && (data.type == 'padel' || data.type == 'beach');
+    }
+
+    function isValidTournamentTeam(data) {
+      return data.keys().hasAll(['teacher_id', 'tournament_id', 'category', 'group_name', 'player1_name']) &&
+             data.teacher_id is string &&
+             data.tournament_id is string &&
+             data.category is string &&
+             data.group_name is string &&
+             data.player1_name is string;
+    }
+
+    function isValidTournamentMatch(data) {
+      return data.keys().hasAll(['teacher_id', 'tournament_id', 'category', 'stage', 'team1_name', 'team2_name', 'status']) &&
+             data.teacher_id is string &&
+             data.tournament_id is string &&
+             data.category is string &&
+             data.stage is string &&
+             data.team1_name is string &&
+             data.team2_name is string &&
+             data.status is string && (data.status == 'agendado' || data.status == 'em_andamento' || data.status == 'encerrado');
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -126,6 +153,27 @@ service cloud.firestore {
     
     match /test/connection {
       allow read: if true;
+    }
+
+    match /tournaments/{tournamentId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && request.resource.data.teacher_id == request.auth.uid && isValidTournament(request.resource.data);
+      allow update: if isAuthenticated() && resource.data.teacher_id == request.auth.uid && isValidTournament(request.resource.data);
+      allow delete: if isAuthenticated() && resource.data.teacher_id == request.auth.uid;
+    }
+
+    match /tournament_teams/{teamId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && request.resource.data.teacher_id == request.auth.uid && isValidTournamentTeam(request.resource.data);
+      allow update: if isAuthenticated() && resource.data.teacher_id == request.auth.uid && isValidTournamentTeam(request.resource.data);
+      allow delete: if isAuthenticated() && resource.data.teacher_id == request.auth.uid;
+    }
+
+    match /tournament_matches/{matchId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && request.resource.data.teacher_id == request.auth.uid && isValidTournamentMatch(request.resource.data);
+      allow update: if isAuthenticated() && resource.data.teacher_id == request.auth.uid && isValidTournamentMatch(request.resource.data);
+      allow delete: if isAuthenticated() && resource.data.teacher_id == request.auth.uid;
     }
   }
 }

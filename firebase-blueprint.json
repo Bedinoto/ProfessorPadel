@@ -53,6 +53,62 @@
         "google_script_url": { "type": "string", "description": "URL of the Google Apps Script to create events" }
       },
       "required": ["teacher_id", "whatsapp_number"]
+    },
+    "Tournament": {
+      "title": "Tournament",
+      "description": "A Padel or Beach Tennis tournament detail",
+      "type": "object",
+      "properties": {
+        "teacher_id": { "type": "string", "description": "ID of the teacher/admin who created the tournament" },
+        "name": { "type": "string", "description": "Name of the tournament" },
+        "type": { "type": "string", "enum": ["padel", "beach"], "description": "Type of sports tournament" },
+        "rules": { "type": "string", "description": "Rules of the tournament" },
+        "locations": { "type": "array", "description": "List of location names for tournament games" },
+        "times": { "type": "array", "description": "List of time schedules for matches" },
+        "dates": { "type": "array", "description": "List of dates for matches" },
+        "categories": { "type": "array", "description": "List of categories" },
+        "created_at": { "type": "string", "description": "Date/Time in ISO format" }
+      },
+      "required": ["teacher_id", "name", "type"]
+    },
+    "TournamentTeam": {
+      "title": "TournamentTeam",
+      "description": "A double/team participating in a category and group",
+      "type": "object",
+      "properties": {
+        "tournament_id": { "type": "string", "description": "Associated tournament ID" },
+        "category": { "type": "string", "description": "E.g., Masculina B, Feminina Open" },
+        "group_name": { "type": "string", "description": "E.g., Chave A, Chave B" },
+        "player1_name": { "type": "string", "description": "Name of first player" },
+        "player1_phone": { "type": "string", "description": "WhatsApp contact of first player" },
+        "player2_name": { "type": "string", "description": "Name of second player" },
+        "player2_phone": { "type": "string", "description": "WhatsApp contact of second player" }
+      },
+      "required": ["tournament_id", "category", "group_name", "player1_name"]
+    },
+    "TournamentMatch": {
+      "title": "TournamentMatch",
+      "description": "A direct game match scheduled between two teams",
+      "type": "object",
+      "properties": {
+        "tournament_id": { "type": "string", "description": "Tournament ID" },
+        "category": { "type": "string", "description": "Category of the match" },
+        "stage": { "type": "string", "description": "E.g., Chave A, Semifinal, Final" },
+        "team1_id": { "type": "string", "description": "ID of team 1" },
+        "team1_name": { "type": "string", "description": "Name representation of team 1" },
+        "team2_id": { "type": "string", "description": "ID of team 2" },
+        "team2_name": { "type": "string", "description": "Name representation of team 2" },
+        "score1_sets": { "type": "array", "description": "Sets result of team 1" },
+        "score2_sets": { "type": "array", "description": "Sets result of team 2" },
+        "score1_text": { "type": "string", "description": "Detailed display text score of team 1" },
+        "score2_text": { "type": "string", "description": "Detailed display text score of team 2" },
+        "date": { "type": "string", "format": "date", "description": "Scheduled date" },
+        "time": { "type": "string", "description": "Scheduled hour" },
+        "location": { "type": "string", "description": "Scheduled court/location" },
+        "status": { "type": "string", "enum": ["agendado", "em_andamento", "encerrado"], "description": "Current status of the match" },
+        "winner_id": { "type": "string", "description": "Winning team ID" }
+      },
+      "required": ["tournament_id", "category", "stage", "team1_name", "team2_name", "status"]
     }
   },
   "firestore": {
@@ -71,6 +127,18 @@
     "/settings/{settingId}": {
       "schema": "AppSettings",
       "description": "Collection of app settings"
+    },
+    "/tournaments/{tournamentId}": {
+      "schema": "Tournament",
+      "description": "Collection of tournaments"
+    },
+    "/tournament_teams/{teamId}": {
+      "schema": "TournamentTeam",
+      "description": "Teams inside tournaments"
+    },
+    "/tournament_matches/{matchId}": {
+      "schema": "TournamentMatch",
+      "description": "Matches in tournaments"
     }
   }
 }

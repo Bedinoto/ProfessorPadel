@@ -43,8 +43,11 @@ import {
   ShoppingBasket,
   ShieldCheck,
   ShieldAlert,
-  Percent
+  Percent,
+  Trophy
 } from 'lucide-react';
+import { TournamentManager } from './components/TournamentManager';
+import { TournamentPublicView } from './components/TournamentPublicView';
 import { format, addDays, startOfToday, isSameDay, parseISO, startOfWeek, endOfWeek } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import jsPDF from 'jspdf';
@@ -116,6 +119,7 @@ const DEFAULT_BOOKING_TYPES = [
 ];
 
 export default function App() {
+  const params = new URLSearchParams(window.location.search);
   const [view, setView] = useState<'public' | 'login' | 'admin' | 'shop'>('public');
   const [user, setUser] = useState<any>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -143,6 +147,7 @@ export default function App() {
       const hasProf = params.has('prof');
       const hasTid = params.has('tid');
       const hasBooking = params.has('b');
+      const hasTournament = params.has('t');
 
       if (profFromUrl) {
         setActiveTeacherName(profFromUrl);
@@ -151,6 +156,8 @@ export default function App() {
       // Hidden access via /admin or if already authenticated
       if (window.location.pathname === '/loja') {
         setView('shop');
+      } else if (hasTournament) {
+        setView('public');
       } else if ((currentUser || window.location.pathname === '/admin') && !hasLoc && !hasProf && !hasTid && !hasBooking) {
         setView(currentUser ? 'admin' : 'login');
       } else if (hasLoc || hasProf || hasTid || hasBooking) {
@@ -268,11 +275,18 @@ export default function App() {
         <AnimatePresence mode="wait">
           {view === 'public' && (
             <motion.div key="public" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <PublicBooking 
-                onTeacherNameFetched={setActiveTeacherName} 
-                onUserTypeFetched={setActiveUserType}
-                setToast={setToast} 
-              />
+              {params.has('t') ? (
+                <TournamentPublicView 
+                  tournamentId={params.get('t') || ''} 
+                  setToast={setToast} 
+                />
+              ) : (
+                <PublicBooking 
+                  onTeacherNameFetched={setActiveTeacherName} 
+                  onUserTypeFetched={setActiveUserType}
+                  setToast={setToast} 
+                />
+              )}
             </motion.div>
           )}
           {view === 'shop' && (
@@ -1559,7 +1573,7 @@ function ManualBookingModal({
 }
 
 function AdminDashboard({ user, teacherName, setToast, unsyncedCount }: { user: any, teacherName: string, setToast: (t: any) => void, unsyncedCount: number }) {
-  const [tab, setTab] = useState<'schedule' | 'bookings' | 'finance' | 'locations' | 'settings' | 'products' | 'superadmin'>('schedule');
+  const [tab, setTab] = useState<'schedule' | 'bookings' | 'finance' | 'locations' | 'settings' | 'products' | 'superadmin' | 'tournament'>('schedule');
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [finance, setFinance] = useState<FinanceSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1921,6 +1935,13 @@ function AdminDashboard({ user, teacherName, setToast, unsyncedCount }: { user: 
             Loja
           </button>
           <button 
+            onClick={() => setTab('tournament')}
+            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${tab === 'tournament' ? 'bg-green-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            <Trophy size={14} />
+            Torneios
+          </button>
+          <button 
             onClick={() => setTab('settings')}
             className={`px-4 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${tab === 'settings' ? 'bg-green-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-700'}`}
           >
@@ -1951,6 +1972,11 @@ function AdminDashboard({ user, teacherName, setToast, unsyncedCount }: { user: 
         {tab === 'products' && (
           <motion.div key="products" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <ProductManager user={user} setToast={setToast} />
+          </motion.div>
+        )}
+        {tab === 'tournament' && (
+          <motion.div key="tournament" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <TournamentManager user={user} setToast={setToast} />
           </motion.div>
         )}
         {tab === 'settings' && (
@@ -2850,9 +2876,10 @@ function ScheduleManager({
       const startDay = appSettings?.agenda_start_day !== undefined ? appSettings.agenda_start_day : 1;
       const duration = appSettings?.agenda_duration || 7;
 
-      // Calculate Start and End of the report
-      const bNow = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
-      const today = new Date(bNow.getFullYear(), bNow.getMonth(), bNow.getDate());
+       // Calculate Start and End of the report
+      const tzNow = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+      const tzTodayStr = `${tzNow.getFullYear()}-${String(tzNow.getMonth() + 1).padStart(2, '0')}-${String(tzNow.getDate()).padStart(2, '0')}`;
+      const today = new Date(tzNow.getFullYear(), tzNow.getMonth(), tzNow.getDate());
       const startDateReport = startOfWeek(today, { weekStartsOn: startDay as any });
       const endDateReport = addDays(startDateReport, duration - 1);
       
@@ -2883,18 +2910,16 @@ function ScheduleManager({
       let horariosText = '';
       for (let i = 0; i < duration; i++) {
         const date = addDays(startDateReport, i);
-        if (date < today) continue;
-
         const dateStr = format(date, 'yyyy-MM-dd');
+
+        if (dateStr < tzTodayStr) continue;
+
         let daySlots = [...(grouped[dateStr] || [])];
         
-        // Filter slots if the day is today to remove past times
-        if (isSameDay(date, new Date())) {
-          // Get current time specifically in Brazil (Sao Paulo) timezone
-          const nowStr = new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" });
-          const now = new Date(nowStr);
-          const currentHour = now.getHours();
-          const currentMinute = now.getMinutes();
+        // Filter slots if the day is today to remove past times in Brazil timezone
+        if (dateStr === tzTodayStr) {
+          const currentHour = tzNow.getHours();
+          const currentMinute = tzNow.getMinutes();
           
           daySlots = daySlots.filter(time => {
             const [hour, minute] = time.split(':').map(Number);
@@ -4412,64 +4437,95 @@ function SuperAdminManager({ setToast }: { setToast: (t: any) => void }) {
 
       <div className="grid gap-4">
         {teachers.map(teacher => (
-          <div key={teacher.id} className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center text-gray-400">
-                {teacher.user_type === 'court_owner' ? <MapPin size={24} /> : <User size={24} />}
-              </div>
-              <div>
-                <h4 className="font-bold text-gray-900">{teacher.teacher_name || 'Nome não configurado'}</h4>
-                <p className="text-xs text-gray-500 font-mono">{teacher.id}</p>
-                <div className="flex items-center gap-3 mt-1">
-                  <div className="flex items-center gap-1">
-                    <span className={`w-2 h-2 rounded-full ${teacher.is_active !== false ? 'bg-green-500' : 'bg-red-500'}`} />
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
-                      {teacher.is_active !== false ? 'Ativo' : 'Inativo'}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1 border-l pl-3 border-gray-100">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-purple-600">
-                      {teacher.user_type === 'court_owner' ? 'Dono de Quadra' : 'Professor'}
-                    </span>
+          <div key={teacher.id} className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm flex flex-col gap-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center text-gray-400">
+                  {teacher.user_type === 'court_owner' ? <MapPin size={24} /> : <User size={24} />}
+                </div>
+                <div>
+                  <h4 className="font-bold text-gray-900">{teacher.teacher_name || 'Nome não configurado'}</h4>
+                  <p className="text-xs text-gray-500 font-mono">{teacher.id}</p>
+                  <div className="flex items-center gap-3 mt-1">
+                    <div className="flex items-center gap-1">
+                      <span className={`w-2 h-2 rounded-full ${teacher.is_active !== false ? 'bg-green-500' : 'bg-red-500'}`} />
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                        {teacher.is_active !== false ? 'Ativo' : 'Inativo'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 border-l pl-3 border-gray-100">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-purple-600">
+                        {teacher.user_type === 'court_owner' ? 'Dono de Quadra' : 'Professor'}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
 
-            <div className="flex items-center gap-2">
-              <div className="flex bg-gray-50 p-1 rounded-xl">
-                <button
-                  onClick={() => changeUserType(teacher, 'professor')}
-                  className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${
-                    (teacher.user_type === 'professor' || !teacher.user_type)
-                      ? 'bg-white text-purple-600 shadow-sm'
-                      : 'text-gray-400 hover:text-gray-600'
+              <div className="flex items-center gap-2">
+                <div className="flex bg-gray-50 p-1 rounded-xl font-sans">
+                  <button
+                    onClick={() => changeUserType(teacher, 'professor')}
+                    className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${
+                      (teacher.user_type === 'professor' || !teacher.user_type)
+                        ? 'bg-white text-purple-600 shadow-sm'
+                        : 'text-gray-400 hover:text-gray-600'
+                    }`}
+                  >
+                    Professor
+                  </button>
+                  <button
+                    onClick={() => changeUserType(teacher, 'court_owner')}
+                    className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${
+                      teacher.user_type === 'court_owner'
+                        ? 'bg-white text-purple-600 shadow-sm'
+                        : 'text-gray-400 hover:text-gray-600'
+                    }`}
+                  >
+                    Dono
+                  </button>
+                </div>
+
+                <button 
+                  onClick={() => toggleTeacherStatus(teacher)}
+                  className={`flex-1 md:flex-none px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                    teacher.is_active !== false 
+                      ? 'bg-red-50 text-red-600 hover:bg-red-100' 
+                      : 'bg-green-50 text-green-600 hover:bg-green-100'
                   }`}
                 >
-                  Professor
-                </button>
-                <button
-                  onClick={() => changeUserType(teacher, 'court_owner')}
-                  className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all ${
-                    teacher.user_type === 'court_owner'
-                      ? 'bg-white text-purple-600 shadow-sm'
-                      : 'text-gray-400 hover:text-gray-600'
-                  }`}
-                >
-                  Dono
+                  {teacher.is_active !== false ? 'Desativar' : 'Ativar'}
                 </button>
               </div>
+            </div>
 
-              <button 
-                onClick={() => toggleTeacherStatus(teacher)}
-                className={`flex-1 md:flex-none px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                  teacher.is_active !== false 
-                    ? 'bg-red-50 text-red-600 hover:bg-red-100' 
-                    : 'bg-green-50 text-green-600 hover:bg-green-100'
-                }`}
-              >
-                {teacher.is_active !== false ? 'Desativar' : 'Ativar'}
-              </button>
+            {/* Token de Instância WhatsApp */}
+            <div className="mt-2 pt-4 border-t border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 w-full bg-gray-50/50 p-3.5 rounded-2xl border border-dashed border-gray-200">
+              <div className="flex flex-col">
+                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-1.5">
+                  <AlertCircle size={12} className="text-purple-500" /> Token da Instância do WhatsApp
+                </span>
+                <span className="text-[9px] text-gray-400 mt-0.5 font-medium">Instância do UAZAPI. Padrão: 394f8fdb-c390-4a89-8c55-34d8b78ce4ab</span>
+              </div>
+              <div className="flex gap-2 w-full sm:w-auto">
+                <input 
+                  type="text"
+                  className="px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-mono w-full sm:w-72 outline-none focus:ring-1 focus:ring-purple-500"
+                  placeholder="Instância padrão ativa..."
+                  defaultValue={teacher.whatsapp_instance_token || '394f8fdb-c390-4a89-8c55-34d8b78ce4ab'}
+                  onBlur={async (e) => {
+                    const tokenValue = e.target.value.trim();
+                    try {
+                      await updateDoc(doc(db, 'settings', teacher.id), {
+                        whatsapp_instance_token: tokenValue
+                      });
+                      setToast({ message: `Token da Instância de ${teacher.teacher_name || 'Usuário'} atualizado!`, type: 'success' });
+                    } catch (error) {
+                      setToast({ message: "Erro ao atualizar token de instância.", type: 'error' });
+                    }
+                  }}
+                />
+              </div>
             </div>
           </div>
         ))}
