@@ -674,7 +674,7 @@ export function TournamentManager({ user, setToast }: TournamentManagerProps) {
       <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <span className="text-[10px] font-black text-green-600 uppercase tracking-widest flex items-center gap-1">
-            <Trophy size={12} /> TORNEIOS ACTIVOS
+            <Trophy size={12} /> TORNEIOS ATIVOS
           </span>
           <div className="flex items-center gap-2 mt-1">
             {tournaments.length === 0 ? (

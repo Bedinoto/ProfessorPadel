@@ -244,7 +244,7 @@ export function TournamentPublicView({ tournamentId, setToast }: TournamentPubli
 
         <div className="relative space-y-3">
           <span className="px-3 py-1 bg-green-500 text-white rounded-full font-black text-[9px] uppercase tracking-widest bg-opacity-30 border border-green-400">
-            {tournament.type === 'padel' ? 'Campeonato de Padel 🎾' : 'Torneio Beach Tennis 🏖️'}
+            {tournament.type === 'padel' ? 'Torneio de Padel 🎾' : 'Torneio Beach Tennis 🏖️'}
           </span>
           <h2 className="text-2xl sm:text-3xl font-black tracking-tight">{tournament.name}</h2>
           <p className="text-green-200 text-xs font-semibold">Tabela oficial e classificação em tempo real</p>
