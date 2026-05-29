@@ -61,6 +61,9 @@ export function TournamentManager({ user, setToast }: TournamentManagerProps) {
   const [score2, setScore2] = useState<string[]>(['0', '0', '0']);
   const [matchStatus, setMatchStatus] = useState<'agendado' | 'em_andamento' | 'encerrado'>('agendado');
   const [matchWinnerId, setMatchWinnerId] = useState<string>('');
+  const [matchDate, setMatchDate] = useState<string>('');
+  const [matchTime, setMatchTime] = useState<string>('');
+  const [matchLocation, setMatchLocation] = useState<string>('');
 
   // Pre-filled Rules Templates
   const padelDefaultRules = `### REGRAS DO TORNEIO DE PADEL
@@ -477,6 +480,9 @@ export function TournamentManager({ user, setToast }: TournamentManagerProps) {
     setScore2(s2);
     setMatchStatus(match.status);
     setMatchWinnerId(match.winner_id || '');
+    setMatchDate(match.date || '');
+    setMatchTime(match.time || '');
+    setMatchLocation(match.location || '');
   };
 
   const handleSaveResult = async (e: React.FormEvent) => {
@@ -504,13 +510,16 @@ export function TournamentManager({ user, setToast }: TournamentManagerProps) {
         score1_text: scoreTexts.join(' '),
         score2_text: scoreTextsTeam2.join(' '),
         status: matchStatus,
-        winner_id: matchWinnerId
+        winner_id: matchWinnerId,
+        date: matchDate,
+        time: matchTime,
+        location: matchLocation
       });
 
-      setToast({ message: 'Resultado registrado com sucesso!', type: 'success' });
+      setToast({ message: 'Resultado e data/hora salvos com sucesso!', type: 'success' });
       setEditingMatch(null);
     } catch (e: any) {
-      setToast({ message: 'Erro ao salvar resultado: ' + e.message, type: 'error' });
+      setToast({ message: 'Erro ao salvar jogo: ' + e.message, type: 'error' });
     }
   };
 
@@ -1526,7 +1535,7 @@ export function TournamentManager({ user, setToast }: TournamentManagerProps) {
           <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl p-6 space-y-6">
             <div className="flex justify-between items-center border-b pb-3">
               <h4 className="font-black text-gray-900 border-none outline-none text-md">
-                REGISTRAR PLACAR DA PARTIDA
+                DADOS E PLACAR DA PARTIDA
               </h4>
               <button 
                 onClick={() => setEditingMatch(null)}
@@ -1538,6 +1547,46 @@ export function TournamentManager({ user, setToast }: TournamentManagerProps) {
 
             <form onSubmit={handleSaveResult} className="space-y-4">
               
+              {/* Date, Time and Location editing fields */}
+              <div className="bg-green-50/50 p-4 border border-green-100 rounded-xl space-y-3">
+                <div className="text-[10px] font-black text-green-700 uppercase tracking-widest text-center">Data, Hora e Local</div>
+                
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-gray-500 uppercase">Data</label>
+                    <input
+                      type="date"
+                      className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-semibold outline-none focus:ring-1 focus:ring-green-500"
+                      value={matchDate}
+                      onChange={e => setMatchDate(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-gray-500 uppercase">Horário</label>
+                    <input
+                      type="time"
+                      className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-semibold outline-none focus:ring-1 focus:ring-green-500"
+                      value={matchTime}
+                      onChange={e => setMatchTime(e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold text-gray-500 uppercase">Local / Quadra</label>
+                  <input
+                    type="text"
+                    className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-semibold outline-none focus:ring-1 focus:ring-green-500"
+                    placeholder="Ex: Quadra 1, Quadra Central"
+                    value={matchLocation}
+                    onChange={e => setMatchLocation(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
               <div className="bg-gray-50 p-4 rounded-xl space-y-3">
                 <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest text-center">Formato de Sets</div>
                 
