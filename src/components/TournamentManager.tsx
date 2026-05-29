@@ -1403,7 +1403,7 @@ export function TournamentManager({ user, setToast }: TournamentManagerProps) {
                                 onClick={() => openResultModal(m)}
                                 className="px-3.5 py-2 bg-gray-900 text-white rounded-xl text-xs font-bold hover:bg-gray-800 transition shadow-sm active:scale-95"
                               >
-                                REGISTRAR RESULTADO
+                                REGISTRAR | ALTERAR
                               </button>
                               <button
                                 onClick={() => handleDeleteMatch(m.id)}
