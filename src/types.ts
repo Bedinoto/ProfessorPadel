@@ -84,6 +84,8 @@ export interface Tournament {
   dates: string[]; // List of YYYY-MM-DD match dates
   categories: string[]; // List of categories, e.g. ["Categoria A", "Categoria B"]
   created_at: string;
+  points_win?: number;
+  points_loss?: number;
 }
 
 export interface TournamentTeam {

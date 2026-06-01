@@ -146,16 +146,19 @@ export function TournamentPublicView({ tournamentId, setToast }: TournamentPubli
       stand[t2Id].gamesWon += gamesWonT2;
       stand[t2Id].gamesLost += gamesWonT1;
 
+      const ptWin = tournament?.points_win !== undefined ? tournament.points_win : 3;
+      const ptLoss = tournament?.points_loss !== undefined ? tournament.points_loss : 1;
+
       if (m.winner_id === t1Id) {
         stand[t1Id].won += 1;
-        stand[t1Id].points += 3; // Win yields 3 pts
+        stand[t1Id].points += ptWin;
         stand[t2Id].lost += 1;
-        stand[t2Id].points += 1; // Loss yields 1 pt
+        stand[t2Id].points += ptLoss;
       } else if (m.winner_id === t2Id) {
         stand[t2Id].won += 1;
-        stand[t2Id].points += 3;
+        stand[t2Id].points += ptWin;
         stand[t1Id].lost += 1;
-        stand[t1Id].points += 1;
+        stand[t1Id].points += ptLoss;
       }
     });
 

@@ -10,6 +10,51 @@ import {
   ChevronRight, ArrowRight, HelpCircle, AlertCircle, Info, MapPin
 } from 'lucide-react';
 
+// Pre-filled Rules Templates Functions
+const getPadelDefaultRules = (win: number, loss: number) => `### REGRAS DO TORNEIO DE PADEL
+
+1. **Formato das Partidas:**
+   * Fase de Grupos: Partidas jogadas em set único de 6 games (com tiebreak de 7 pontos se empatar em 5-5 ou 6-6) OU melhor de 3 sets curtos (até 4 games).
+   * Fase Eliminatória: Jogos em melhor de 3 sets completos. Em caso de empate de 1-1 em sets, disputa-se um Super Tie-break até 10 pontos no 3º set.
+
+2. **Ponto de Ouro (Golden Point / No-Ad):**
+   * No empate em 40-40, disputa-se um ponto decisivo. A dupla receptora escolhe o lado que deseja receber o saque. Quem vencer o ponto ganha o game.
+
+3. **Pontuação na Chave:**
+   * Vitória: ${win} ponto${win !== 1 ? 's' : ''}.
+   * Derrota comercial: ${loss} ponto${loss !== 1 ? 's' : ''}.
+   * W.O. (Não comparecimento): 0 pontos (Vitória declarada da outra dupla por 6-0).
+
+4. **Critérios de Desempate na Fase de Grupos:**
+   1. Maior número de pontos.
+   2. Confronto direto (se houver empate entre duas duplas).
+   3. Melhor saldo de sets.
+   4. Melhor saldo de games.
+   5. Sorteio.`;
+
+const getBeachDefaultRules = (win: number, loss: number) => `### REGRAS DO TORNEIO DE BEACH TENNIS
+
+1. **Formato das Partidas:**
+   * Fase de Grupos: Partidas jogadas em set único de 6 games (com tiebreak de 7 pontos no empate em 5-5).
+   * Fase Final: Jogos em melhor de 3 sets com super tiebreak até 10 pontos substituindo o 3º set.
+
+2. **Sem Vantagem de Serviço (No-Ad):**
+   * Em Beach Tennis, não há vantagem. No empate em 40-40, o próximo ponto define o game. O saque pode ser efetuado de qualquer ponto atrás da linha e direcionado a qualquer área da quadra adversária.
+
+3. **Net / Let no Saque:**
+   * Não existe "let" no saque de Beach Tennis. Se a bola tocar a fita da rede e passar para o lado adversário, o jogo continua normalmente.
+
+4. **Pontuação de Classificação:**
+   * Vitória: ${win} ponto${win !== 1 ? 's' : ''}.
+   * Derrota comercial: ${loss} ponto${loss !== 1 ? 's' : ''}.
+   * W.O.: 0 pontos.
+
+5. **Critérios de Desempate:**
+   1. Vitórias.
+   2. Confronto direto.
+   3. Saldo de sets.
+   4. Saldo de games.`;
+
 interface TournamentManagerProps {
   user: any;
   setToast: (t: { message: string, type: 'success' | 'error' | 'info' }) => void;
@@ -29,11 +74,13 @@ export function TournamentManager({ user, setToast }: TournamentManagerProps) {
   const [newTourney, setNewTourney] = useState({
     name: '',
     type: 'padel' as 'padel' | 'beach',
-    rules: '',
+    rules: getPadelDefaultRules(3, 1),
     locations: ['Quadra 1'],
     times: ['08:00', '09:30', '11:00', '14:00', '15:30', '17:00'],
     dates: [] as string[],
-    categories: ['Iniciante', 'Mista B', 'Masculino C']
+    categories: ['Iniciante', 'Mista B', 'Masculino C'],
+    points_win: 3,
+    points_loss: 1
   });
 
   const [dateInput, setDateInput] = useState('');
@@ -64,51 +111,6 @@ export function TournamentManager({ user, setToast }: TournamentManagerProps) {
   const [matchDate, setMatchDate] = useState<string>('');
   const [matchTime, setMatchTime] = useState<string>('');
   const [matchLocation, setMatchLocation] = useState<string>('');
-
-  // Pre-filled Rules Templates
-  const padelDefaultRules = `### REGRAS DO TORNEIO DE PADEL
-
-1. **Formato das Partidas:**
-   * Fase de Grupos: Partidas jogadas em set único de 6 games (com tiebreak de 7 pontos se empatar em 5-5 ou 6-6) OU melhor de 3 sets curtos (até 4 games).
-   * Fase Eliminatória: Jogos em melhor de 3 sets completos. Em caso de empate de 1-1 em sets, disputa-se um Super Tie-break até 10 pontos no 3º set.
-
-2. **Ponto de Ouro (Golden Point / No-Ad):**
-   * No empate em 40-40, disputa-se um ponto decisivo. A dupla receptora escolhe o lado que deseja receber o saque. Quem vencer o ponto ganha o game.
-
-3. **Pontuação na Chave:**
-   * Vitória: 2 pontos.
-   * Derrota comercial: 1 ponto.
-   * W.O. (Não comparecimento): 0 pontos (Vitória declarada da outra dupla por 6-0).
-
-4. **Critérios de Desempate na Fase de Grupos:**
-   1. Maior número de pontos.
-   2. Confronto direto (se houver empate entre duas duplas).
-   3. Melhor saldo de sets.
-   4. Melhor saldo de games.
-   5. Sorteio.`;
-
-  const beachDefaultRules = `### REGRAS DO TORNEIO DE BEACH TENNIS
-
-1. **Formato das Partidas:**
-   * Fase de Grupos: Partidas jogadas em set único de 6 games (com tiebreak de 7 pontos no empate em 5-5).
-   * Fase Final: Jogos em melhor de 3 sets com super tiebreak até 10 pontos substituindo o 3º set.
-
-2. **Sem Vantagem de Serviço (No-Ad):**
-   * Em Beach Tennis, não há vantagem. No empate em 40-40, o próximo ponto define o game. O saque pode ser efetuado de qualquer ponto atrás da linha e direcionado a qualquer área da quadra adversária.
-
-3. **Net / Let no Saque:**
-   * Não existe "let" no saque de Beach Tennis. Se a bola tocar a fita da rede e passar para o lado adversário, o jogo continua normalmente.
-
-4. **Pontuação de Classificação:**
-   * Vitória: 2 pontos.
-   * Derrota comercial: 1 ponto.
-   * W.O.: 0 pontos.
-
-5. **Critérios de Desempate:**
-   1. Vitórias.
-   2. Confronto direto.
-   3. Saldo de sets.
-   4. Saldo de games.`;
 
   // Monitor Tournaments list
   useEffect(() => {
@@ -157,7 +159,9 @@ export function TournamentManager({ user, setToast }: TournamentManagerProps) {
   useEffect(() => {
     setNewTourney(prev => ({
       ...prev,
-      rules: prev.type === 'padel' ? padelDefaultRules : beachDefaultRules
+      rules: prev.type === 'padel' 
+        ? getPadelDefaultRules(prev.points_win, prev.points_loss) 
+        : getBeachDefaultRules(prev.points_win, prev.points_loss)
     }));
   }, [newTourney.type]);
 
@@ -227,6 +231,8 @@ export function TournamentManager({ user, setToast }: TournamentManagerProps) {
         times: newTourney.times,
         dates: newTourney.dates,
         categories: newTourney.categories,
+        points_win: newTourney.points_win,
+        points_loss: newTourney.points_loss,
         created_at: new Date().toISOString()
       });
       setToast({ message: 'Torneio criado com sucesso!', type: 'success' });
@@ -234,11 +240,13 @@ export function TournamentManager({ user, setToast }: TournamentManagerProps) {
       setNewTourney({
         name: '',
         type: 'padel',
-        rules: padelDefaultRules,
+        rules: getPadelDefaultRules(3, 1),
         locations: ['Quadra 1'],
         times: ['08:00', '09:30', '11:00', '14:00', '15:30', '17:00'],
         dates: [],
-        categories: ['Iniciante', 'Mista B', 'Masculino C']
+        categories: ['Iniciante', 'Mista B', 'Masculino C'],
+        points_win: 3,
+        points_loss: 1
       });
     } catch (e: any) {
       setToast({ message: 'Erro ao criar o torneio: ' + e.message, type: 'error' });
@@ -605,16 +613,19 @@ export function TournamentManager({ user, setToast }: TournamentManagerProps) {
       stand[t2Id].gamesWon += gamesWonT2;
       stand[t2Id].gamesLost += gamesWonT1;
 
+      const ptWin = selectedTournament.points_win !== undefined ? selectedTournament.points_win : 3;
+      const ptLoss = selectedTournament.points_loss !== undefined ? selectedTournament.points_loss : 1;
+
       if (m.winner_id === t1Id) {
         stand[t1Id].won += 1;
-        stand[t1Id].points += 3; // 3 points for win
+        stand[t1Id].points += ptWin;
         stand[t2Id].lost += 1;
-        stand[t2Id].points += 1; // 1 point for loss
+        stand[t2Id].points += ptLoss;
       } else if (m.winner_id === t2Id) {
         stand[t2Id].won += 1;
-        stand[t2Id].points += 3;
+        stand[t2Id].points += ptWin;
         stand[t1Id].lost += 1;
-        stand[t1Id].points += 1;
+        stand[t1Id].points += ptLoss;
       }
     });
 
@@ -775,6 +786,50 @@ export function TournamentManager({ user, setToast }: TournamentManagerProps) {
                   >
                     BEACH TENNIS
                   </button>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Pontuação de Classificação (Chave)</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-gray-500 uppercase">Pontos por Vitória</label>
+                    <input
+                      type="number"
+                      min="0"
+                      className="w-full px-3 py-2 bg-gray-50 border border-gray-100 rounded-lg text-xs font-semibold outline-none focus:ring-1 focus:ring-green-500"
+                      value={newTourney.points_win}
+                      onChange={e => {
+                        const val = parseInt(e.target.value) || 0;
+                        setNewTourney(prev => ({
+                          ...prev,
+                          points_win: val,
+                          rules: prev.type === 'padel' 
+                            ? getPadelDefaultRules(val, prev.points_loss) 
+                            : getBeachDefaultRules(val, prev.points_loss)
+                        }));
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-gray-500 uppercase">Pontos por Derrota</label>
+                    <input
+                      type="number"
+                      min="0"
+                      className="w-full px-3 py-2 bg-gray-50 border border-gray-100 rounded-lg text-xs font-semibold outline-none focus:ring-1 focus:ring-green-500"
+                      value={newTourney.points_loss}
+                      onChange={e => {
+                        const val = parseInt(e.target.value) || 0;
+                        setNewTourney(prev => ({
+                          ...prev,
+                          points_loss: val,
+                          rules: prev.type === 'padel' 
+                            ? getPadelDefaultRules(prev.points_win, val) 
+                            : getBeachDefaultRules(prev.points_win, val)
+                        }));
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
 
